@@ -1,0 +1,80 @@
+{
+  "display_information": {
+    "name": "Community Impact Agent",
+    "description": "Finds community help requests, turns them into trackable tasks, and posts daily impact reports.",
+    "background_color": "#0A2540"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "Community Impact Agent",
+      "always_online": true
+    },
+    "assistant_view": {
+      "assistant_description": "I scan channels for community help requests, summarize them, turn them into trackable tasks, and post daily impact reports.",
+      "suggested_prompts": [
+        {
+          "title": "How do I scan for requests?",
+          "message": "How do I scan a channel for help requests?"
+        },
+        {
+          "title": "Show open tasks",
+          "message": "What tasks are currently open?"
+        }
+      ]
+    },
+    "slash_commands": [
+      {
+        "command": "/scan-requests",
+        "description": "Scan this channel for recent help requests",
+        "usage_hint": "[hours-back, default 24]",
+        "should_escape": false
+      },
+      {
+        "command": "/list-tasks",
+        "description": "List all open community tasks",
+        "should_escape": false
+      },
+      {
+        "command": "/daily-report",
+        "description": "Post today's community impact report",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "search:read.public",
+        "commands",
+        "chat:write",
+        "channels:history",
+        "channels:read",
+        "app_mentions:read",
+        "assistant:write",
+        "im:history"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels",
+        "message.im",
+        "assistant_thread_started",
+        "assistant_thread_context_changed"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

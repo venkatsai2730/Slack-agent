@@ -1,0 +1,10 @@
+services:
+  community-impact-agent:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - agent-data:/app/data
+
+volumes:
+  agent-data:
