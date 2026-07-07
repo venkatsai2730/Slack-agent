@@ -1,47 +1,47 @@
 {
   "display_information": {
-    "name": "Community Impact Agent",
-    "description": "Finds community help requests, turns them into trackable tasks, and posts daily impact reports.",
+    "name": "Growth Beacon",
+    "description": "Detects buying intent, expansion signals, competitor mentions, and churn risk in Slack — turns them into CRM-ready business intelligence.",
     "background_color": "#0A2540"
   },
   "features": {
     "app_home": {
-      "home_tab_enabled": false,
+      "home_tab_enabled": true,
       "messages_tab_enabled": true,
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "Community Impact Agent",
+      "display_name": "Growth Beacon",
       "always_online": true
     },
     "assistant_view": {
-      "assistant_description": "I scan channels for community help requests, summarize them, turn them into trackable tasks, and post daily impact reports.",
+      "assistant_description": "I monitor Slack conversations for buying intent, expansion opportunities, churn risk, and other growth signals, and turn them into CRM-ready business intelligence.",
       "suggested_prompts": [
         {
-          "title": "How do I scan for requests?",
-          "message": "How do I scan a channel for help requests?"
+          "title": "How do I scan for signals?",
+          "message": "How do I scan a channel for growth signals?"
         },
         {
-          "title": "Show open tasks",
-          "message": "What tasks are currently open?"
+          "title": "Show recent signals",
+          "message": "What growth signals have been detected recently?"
         }
       ]
     },
     "slash_commands": [
       {
-        "command": "/scan-requests",
-        "description": "Scan this channel for recent help requests",
+        "command": "/gb-scan",
+        "description": "Scan this channel for recent growth signals",
         "usage_hint": "[hours-back, default 24]",
         "should_escape": false
       },
       {
-        "command": "/list-tasks",
-        "description": "List all open community tasks",
+        "command": "/gb-signals",
+        "description": "List recently detected growth signals",
         "should_escape": false
       },
       {
-        "command": "/daily-report",
-        "description": "Post today's community impact report",
+        "command": "/gb-report",
+        "description": "Post today's growth intelligence report",
         "should_escape": false
       }
     ]
@@ -56,7 +56,8 @@
         "channels:read",
         "app_mentions:read",
         "assistant:write",
-        "im:history"
+        "im:history",
+        "users:read"
       ]
     }
   },
@@ -66,6 +67,7 @@
         "app_mention",
         "message.channels",
         "message.im",
+        "app_home_opened",
         "assistant_thread_started",
         "assistant_thread_context_changed"
       ]

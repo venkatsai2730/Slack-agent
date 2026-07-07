@@ -1,18 +1,26 @@
 {
-  "name": "community-impact-agent",
+  "name": "growth-beacon",
   "version": "1.0.0",
-  "description": "Slack Agent for Good — finds community help requests, turns them into trackable tasks, and posts daily impact reports.",
+  "description": "AI Growth Intelligence Slack agent for Product-Led Growth teams — detects buying intent, expansion signals, competitor mentions, and churn risk in Slack conversations, and turns them into CRM-ready business intelligence.",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "mcp": "node mcp/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.js\""
   },
   "engines": {
     "node": ">=18"
   },
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^4.2.0",
     "dotenv": "^16.4.5",
-    "openai": "^4.85.0"
+    "openai": "^4.85.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }

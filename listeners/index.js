@@ -1,17 +1,19 @@
 const appMention = require('./events/app-mention');
 const message = require('./events/message');
-const scanRequests = require('./commands/scan-requests');
-const listTasks = require('./commands/list-tasks');
-const dailyReport = require('./commands/daily-report');
-const taskActions = require('./actions/task-actions');
+const gbScan = require('./commands/gb-scan');
+const gbSignals = require('./commands/gb-signals');
+const gbReport = require('./commands/gb-report');
+const signalActions = require('./actions/signal-actions');
 const assistant = require('./assistant');
+const appHome = require('./app-home');
 
 module.exports = (app) => {
   appMention(app);
   message(app);
-  scanRequests(app);
-  listTasks(app);
-  dailyReport(app);
-  taskActions(app);
+  gbScan(app);
+  gbSignals(app);
+  gbReport(app);
+  signalActions(app);
   assistant(app);
+  appHome(app);
 };

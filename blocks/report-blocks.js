@@ -1,28 +1,30 @@
-const { CATEGORY_EMOJI } = require('./request-card');
+const { SIGNAL_EMOJI, SIGNAL_LABEL } = require('./constants');
 
+/**
+ * @param {{ stats: import('../services/signalStore').statsForToday extends (...args: any) => infer R ? R : never, narrative: string }} params
+ */
 function reportBlocks({ stats, narrative }) {
-  const categoryLines =
-    Object.entries(stats.by_category)
-      .map(([cat, n]) => `${CATEGORY_EMOJI[cat] || '🤝'} ${cat}: *${n}*`)
-      .join('\n') || '_No new tasks today_';
+  const typeLines =
+    Object.entries(stats.by_type)
+      .map(([type, n]) => `${SIGNAL_EMOJI[type] || '📡'} ${SIGNAL_LABEL[type] || type}: *${n}*`)
+      .join('\n') || '_No new signals today_';
 
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: `🌟 Daily Impact Report — ${stats.date}` },
+      text: { type: 'plain_text', text: `🌟 Growth Intelligence Report — ${stats.date}` },
     },
     {
       type: 'section',
       fields: [
-        { type: 'mrkdwn', text: `*Requests found:*\n${stats.requests_found}` },
-        { type: 'mrkdwn', text: `*Tasks created:*\n${stats.tasks_created}` },
-        { type: 'mrkdwn', text: `*Tasks completed:*\n${stats.tasks_completed}` },
-        { type: 'mrkdwn', text: `*Still open:*\n${stats.open_tasks}` },
+        { type: 'mrkdwn', text: `*Signals found:*\n${stats.signals_found}` },
+        { type: 'mrkdwn', text: `*Signals created:*\n${stats.signals_created}` },
+        { type: 'mrkdwn', text: `*Still open:*\n${stats.open_signals}` },
       ],
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `*By category:*\n${categoryLines}` },
+      text: { type: 'mrkdwn', text: `*By signal type:*\n${typeLines}` },
     },
     { type: 'divider' },
     {

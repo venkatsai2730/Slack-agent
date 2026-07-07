@@ -1,4 +1,9 @@
-const OpenAI = require('openai');
+// Node16 module resolution sees this dual CJS/ESM package's types as non-constructable
+// from a plain require(); the runtime value is a callable class either way (verified),
+// so this is a type-only assertion with no behavior change.
+const OpenAI = /** @type {new (config: { baseURL: string, apiKey: string }) => import('openai').default} */ (
+  /** @type {unknown} */ (require('openai'))
+);
 
 // Any OpenAI-compatible endpoint works: Hugging Face router (default), Ollama, Groq, etc.
 const client = new OpenAI({
