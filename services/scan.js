@@ -1,12 +1,13 @@
-// Shared growth-signal pipeline: search/detect (used by /gb-scan for retroactive
+// Shared community-signal pipeline: search/detect (used by /cb-scan for retroactive
 // scans) and per-message processing (used by the passive message listener for
 // real-time monitoring). Both paths funnel through processMessageForSignals()
-// so detection, persistence, CRM logging, and card rendering only live in one place.
+// so detection, persistence, case logging, and card rendering only live in one place.
 
 const searchService = require('./searchService');
 const intentEngine = require('./intentEngine');
 const summaryService = require('./summaryService');
 const signalStore = require('./signalStore');
+const matchService = require('./matchService');
 const crm = require('./crm');
 const { signalCardBlocks } = require('../blocks/signal-card');
 
@@ -32,9 +33,9 @@ function makeChannelPoster(client, channelId) {
 }
 
 /**
- * Runs the full detect -> summarize -> persist -> CRM-log -> post pipeline for a
- * single message. Returns the created Signal, or null if no qualifying signal
- * (below confidence threshold, or none detected) was found.
+ * Runs the full detect -> summarize -> persist -> case-log -> match -> post
+ * pipeline for a single message. Returns the created Signal, or null if no
+ * qualifying signal (below confidence threshold, or none detected) was found.
  * @param {{
  *   channelId: string, ts: string, text: string, authorId?: string, authorName?: string,
  *   permalink?: string, threadContext?: string, post: PostFn
@@ -67,24 +68,28 @@ async function processMessageForSignals({ channelId, ts, text, authorId, authorN
     const { recordId } = await crm.getProvider().logSignal(signal);
     signalStore.markCrmLogged(signal.signal_id, recordId);
   } catch (err) {
-    console.error('CRM logging failed (signal is still saved locally):', err.message);
+    console.error('Case logging failed (signal is still saved locally):', err.message);
   }
+
+  // Deterministic need ↔ offer matching: an offer of help surfaces the open
+  // needs it could meet, and a new need surfaces recent unclaimed offers.
+  const matches = matchService.findMatches(signal);
 
   await post({
     text: `${summary.what_happened}`,
-    blocks: signalCardBlocks(signalStore.getSignal(signal.signal_id)),
+    blocks: signalCardBlocks(signalStore.getSignal(signal.signal_id), { matches }),
   });
 
   return signal;
 }
 
 /**
- * Retroactively scans a channel's recent history for growth signals.
+ * Retroactively scans a channel's recent history for community signals.
  * post: async ({ text, blocks }) => void — posts a message into the target channel.
  * @param {{ client: any, channelId: string, hoursBack: number, actionToken?: string | null, botUserId?: string, post: PostFn }} opts
  */
 async function runScan({ client, channelId, hoursBack, actionToken, botUserId, post }) {
-  await post({ text: `🔎 Scanning the last ${hoursBack}h for growth signals...` });
+  await post({ text: `🔎 Scanning the last ${hoursBack}h for community needs and offers of help...` });
 
   const messages = await searchService.searchWithFallback(client, { channelId, hoursBack, actionToken });
   const candidates = messages
@@ -108,7 +113,7 @@ async function runScan({ client, channelId, hoursBack, actionToken, botUserId, p
   signalStore.logScan(found);
 
   if (found === 0) {
-    await post({ text: `No strong growth signals found in the last ${hoursBack}h. All quiet. 🎉` });
+    await post({ text: `No unanswered community signals found in the last ${hoursBack}h. All quiet. 🎉` });
   }
   return found;
 }

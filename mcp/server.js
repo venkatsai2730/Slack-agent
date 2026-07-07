@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Growth Beacon MCP server — exposes the growth-intelligence pipeline as MCP
+// Community Beacon MCP server — exposes the community-impact pipeline as MCP
 // tools over stdio, independent of the Slack Bolt process (app.js). Launch with
 // `npm run mcp`. Intended for use from an MCP-compatible client (e.g. Claude
 // Desktop, or any MCP client configured to spawn this process).
@@ -17,7 +17,8 @@ const { z } = require('zod');
 const searchService = require('../services/searchService');
 const intentEngine = require('../services/intentEngine');
 const summaryService = require('../services/summaryService');
-const leadScore = require('../services/leadScore');
+const priorityScore = require('../services/priorityScore');
+const matchService = require('../services/matchService');
 const signalStore = require('../services/signalStore');
 const crm = require('../services/crm');
 
@@ -44,13 +45,13 @@ function errorResult(err) {
   return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
 }
 
-const server = new McpServer({ name: 'growth-beacon', version: '1.0.0' });
+const server = new McpServer({ name: 'community-beacon', version: '1.0.0' });
 
 server.registerTool(
   'summarize_thread',
   {
     title: 'Summarize Thread',
-    description: 'Fetches a Slack thread and returns detected growth signals plus an executive summary.',
+    description: 'Fetches a Slack thread and returns detected community signals plus a coordinator-ready summary.',
     inputSchema: {
       channel: z.string().describe('Slack channel ID'),
       thread_ts: z.string().describe('Timestamp (ts) of the thread parent message'),
@@ -77,11 +78,11 @@ server.registerTool(
   'search_messages',
   {
     title: 'Search Messages',
-    description: 'Searches a Slack channel for growth-signal language over a lookback window.',
+    description: 'Searches a Slack channel for community-signal language (help requests, offers, urgent needs) over a lookback window.',
     inputSchema: {
       channel: z.string().describe('Slack channel ID'),
       hours_back: z.number().int().positive().max(168).default(24).describe('How many hours back to search (max 168)'),
-      query: z.string().optional().describe('Override the default growth-signal search query'),
+      query: z.string().optional().describe('Override the default community-signal search query'),
     },
   },
   async ({ channel, hours_back, query }) => {
@@ -100,10 +101,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  'detect_intent',
+  'detect_signals',
   {
-    title: 'Detect Intent',
-    description: 'Classifies a message (and optional thread context) into growth signals with confidence, evidence, and reasoning.',
+    title: 'Detect Community Signals',
+    description: 'Classifies a message (and optional thread context) into community signals — needs, offers, coordination — with confidence, evidence, and reasoning.',
     inputSchema: {
       text: z.string().describe('The message text to analyze'),
       thread_context: z.string().optional().describe('Earlier thread messages for additional context'),
@@ -120,10 +121,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  'score_lead',
+  'score_priority',
   {
-    title: 'Score Lead',
-    description: 'Computes a 0-100 lead score and hot/warm/cold tier from detected signals (or from raw text, which is analyzed first).',
+    title: 'Score Priority',
+    description: 'Computes a 0-100 priority score and critical/high/routine tier from detected signals (or from raw text, which is analyzed first). Deterministic and auditable — decides which need gets looked at first.',
     inputSchema: {
       text: z.string().optional().describe('Raw message text to analyze first, if signals are not already known'),
       signals: z
@@ -145,7 +146,7 @@ server.registerTool(
         resolvedSignals = await intentEngine.detectSignals(text);
       }
 
-      const result = leadScore.scoreLead(resolvedSignals);
+      const result = priorityScore.scorePriority(resolvedSignals);
       return textResult({ ...result, signals_used: resolvedSignals });
     } catch (err) {
       return errorResult(err);
@@ -154,15 +155,15 @@ server.registerTool(
 );
 
 server.registerTool(
-  'log_to_crm',
+  'log_case',
   {
-    title: 'Log To CRM',
-    description: 'Detects signals in a message, summarizes it, persists it as a Growth Beacon signal, and logs it to the configured CRM provider.',
+    title: 'Log Case',
+    description: 'Detects community signals in a message, summarizes it, persists it as a Community Beacon signal, and logs it to the configured case-management (CRM) provider.',
     inputSchema: {
       text: z.string().describe('The message text to log'),
       channel: z.string().optional().describe('Slack channel ID the message came from'),
       ts: z.string().optional().describe('Slack message timestamp'),
-      author: z.string().optional().describe('Customer / author display name'),
+      author: z.string().optional().describe('Community member / author display name'),
       permalink: z.string().optional().describe('Permalink back to the original Slack message'),
     },
   },
@@ -184,7 +185,35 @@ server.registerTool(
       });
       const { recordId } = await crm.getProvider().logSignal(signal);
       signalStore.markCrmLogged(signal.signal_id, recordId);
-      return textResult({ signal_id: signal.signal_id, crm_record_id: recordId, signals });
+      return textResult({ signal_id: signal.signal_id, case_record_id: recordId, signals });
+    } catch (err) {
+      return errorResult(err);
+    }
+  }
+);
+
+server.registerTool(
+  'find_matches',
+  {
+    title: 'Find Matches',
+    description: 'For a previously logged signal, finds complementary open signals: open needs an offer of help could satisfy, or unclaimed offers that could meet a need. Deterministic type-affinity matching, ranked by priority.',
+    inputSchema: {
+      signal_id: z.string().describe('The signal_id returned by log_case or listed by the Slack bot'),
+      limit: z.number().int().positive().max(10).default(3).describe('Maximum number of matches to return'),
+    },
+  },
+  async ({ signal_id, limit }) => {
+    try {
+      const signal = signalStore.getSignal(signal_id);
+      if (!signal) throw new Error(`No signal found with signal_id "${signal_id}".`);
+      const matches = matchService.findMatches(signal, { limit }).map((m) => ({
+        signal_id: m.signal_id,
+        primary_type: m.primary_type,
+        summary: m.summary?.what_happened || '',
+        permalink: m.message?.permalink || '',
+        created_at: m.created_at,
+      }));
+      return textResult({ count: matches.length, matches });
     } catch (err) {
       return errorResult(err);
     }
@@ -195,9 +224,9 @@ server.registerTool(
   'create_followup',
   {
     title: 'Create Followup',
-    description: 'Creates a CRM follow-up task for a previously logged Growth Beacon signal.',
+    description: 'Creates a case-log follow-up task for a previously logged Community Beacon signal.',
     inputSchema: {
-      signal_id: z.string().describe('The signal_id returned by log_to_crm or search results'),
+      signal_id: z.string().describe('The signal_id returned by log_case or search results'),
       owner: z.string().optional().describe('Slack user ID or name to assign the follow-up to'),
     },
   },
@@ -215,17 +244,17 @@ server.registerTool(
 );
 
 server.registerTool(
-  'get_customer_context',
+  'get_constituent_context',
   {
-    title: 'Get Customer Context',
-    description: 'Retrieves prior CRM activity and follow-ups for a customer identifier (name, Slack user ID, or email).',
+    title: 'Get Constituent Context',
+    description: 'Retrieves prior case-log activity and follow-ups for a community member (name, Slack user ID, or email) — "has this neighbor asked for help before, and who helped last time?"',
     inputSchema: {
-      identifier: z.string().describe('Customer name, Slack user ID, or email'),
+      identifier: z.string().describe('Member name, Slack user ID, or email'),
     },
   },
   async ({ identifier }) => {
     try {
-      const context = await crm.getProvider().getCustomerContext(identifier);
+      const context = await crm.getProvider().getConstituentContext(identifier);
       return textResult(context || { found: false, identifier });
     } catch (err) {
       return errorResult(err);
@@ -236,10 +265,10 @@ server.registerTool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Growth Beacon MCP server running on stdio');
+  console.error('Community Beacon MCP server running on stdio');
 }
 
 main().catch((err) => {
-  console.error('Fatal error starting Growth Beacon MCP server:', err);
+  console.error('Fatal error starting Community Beacon MCP server:', err);
   process.exit(1);
 });

@@ -1,6 +1,35 @@
 # Changelog
 
-## [Unreleased] — Growth Beacon pivot
+## [Unreleased] — Community Beacon pivot (Slack Agent for Good)
+
+Full domain pivot from **Growth Beacon** (B2B SaaS growth intelligence) to **Community Beacon** (community-impact agent for mutual-aid groups and nonprofits), built for the Slack Agent Builder Challenge's Slack Agent for Good track. This is, in a sense, a return to the project's original domain — see `PROJECT_ANALYSIS.md` for the pre-Growth-Beacon "Community Impact Agent" — but rebuilt on top of the Growth Beacon era's stronger architecture (MCP server, RTS + fallback search, typed JS, unit tests, provider abstraction).
+
+### Added
+
+- **New signal vocabulary** (`services/intentEngine.js`) — 15 community signal types across three categories: needs (`help_request`, `urgent_need`, `transport_need`, `food_insecurity`, `housing_need`, `medical_need`, `emotional_support_need`, `resource_request`), offers (`volunteer_offer`, `donation_offer`, `skill_offer`, `resource_available`), and coordination (`event_coordination`, `gratitude_report`, `follow_up_needed`). New keyword pre-filter and system prompt tuned for community-impact language.
+- **Priority scoring** (`services/priorityScore.js`, replaces `leadScore.js`) — deterministic, explainable weighted-signal scoring (0–100, critical/high/routine tier); medical and urgent needs weighted highest, offers of help weighted as capacity (never urgency).
+- **Need ↔ offer matching** (`services/matchService.js`, new) — when a signal comes in, deterministically finds complementary *open* signals: an offer surfaces the needs it could satisfy, a need surfaces unclaimed offers that could meet it. Surfaced directly on the Slack alert card. Ranked by priority score.
+- **Case-log framing for the CRM layer** (`services/crm/`) — `mockProvider.js`'s `getCustomerContext` renamed to `getConstituentContext`; Salesforce stub reframed around **Nonprofit Cloud** (members → Constituents, needs → Cases).
+- **New slash commands**: `/cb-scan` (replaces `/gb-scan`), `/cb-needs` (replaces `/gb-signals`), `/cb-impact` (replaces `/gb-report`).
+- **New signal card actions**: "I Can Help" (claim, replaces "Assign Owner") and "Not a Request" (replaces "Mark False Positive"); "View CRM" renamed "View Case History".
+- **MCP tools renamed/added**: `detect_intent` → `detect_signals`, `score_lead` → `score_priority`, `log_to_crm` → `log_case`, `get_customer_context` → `get_constituent_context`; new `find_matches` tool exposes the matching engine to MCP clients.
+- **Impact dashboard** (`blocks/dashboard-blocks.js`) — reworked stats: community needs, offers of help, urgent needs, claimed signals (replacing revenue opportunities / churn risks / feature requests).
+- **Tests**: `test/priorityScore.test.js` and `test/matchService.test.js` added; all existing suites (`intentEngine`, `signalStore`, `crmMock`, `searchService`, `scan`, `llm`) updated to the new vocabulary. 41 tests passing, `tsc --noEmit` clean.
+
+### Removed
+
+- `services/leadScore.js`, `test/leadScore.test.js` — replaced by `priorityScore.js`.
+- All B2B/sales-domain signal types, weights, and copy (pricing intent, churn risk, competitor mention, enterprise buying intent, etc.).
+
+### Changed
+
+- `manifest.json` — renamed app to "Community Beacon", new slash commands, new description/assistant copy.
+- `package.json` — renamed to `community-beacon`, updated description; `test` script now runs with `--test-concurrency=1` since `test/matchService.test.js` shares `signalStore`'s file-backed store with `test/signalStore.test.js`.
+- `.env.sample` — `GROWTH_ALERTS_CHANNEL` → `COMMUNITY_ALERTS_CHANNEL`.
+- `services/scan.js` — `processMessageForSignals()` now calls `matchService.findMatches()` and passes matches through to the signal card.
+- `services/report.js`, `blocks/report-blocks.js` — narrative and headline rewritten for a community-impact audience.
+
+## Prior history — Growth Beacon (superseded by the above pivot)
 
 Full product pivot from **Community Impact Agent** (community help-request tracker) to **Growth Beacon** (AI growth intelligence agent for PLG companies), built for the Slack Agent Builder Challenge.
 

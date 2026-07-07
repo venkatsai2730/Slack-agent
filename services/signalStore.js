@@ -1,5 +1,7 @@
 // Signal store: in-memory with write-through to data/signals.json (hackathon-grade,
 // no DB — same pattern the original task store used, generalized to signals).
+// Status lifecycle: 'new' (needs attention) → 'reviewed' (claimed by a helper)
+// or 'false_positive' (not actually a community signal).
 const fs = require('fs');
 const path = require('path');
 
@@ -11,7 +13,7 @@ const DATA_FILE = path.join(DATA_DIR, 'signals.json');
  * @property {string} signal_id
  * @property {import('./intentEngine').DetectedSignal[]} types
  * @property {string} primary_type
- * @property {import('./summaryService').ExecutiveSummary} summary
+ * @property {import('./summaryService').ImpactSummary} summary
  * @property {{ channel_id: string, ts: string, permalink: string, author_user_id: string, author_name: string, text: string }} message
  * @property {boolean} used_thread_context
  * @property {'new'|'reviewed'|'false_positive'} status
@@ -58,7 +60,7 @@ function pickPrimaryType(detected) {
 }
 
 /**
- * @param {{ types: import('./intentEngine').DetectedSignal[], summary: import('./summaryService').ExecutiveSummary, message: Signal['message'], usedThreadContext?: boolean }} input
+ * @param {{ types: import('./intentEngine').DetectedSignal[], summary: import('./summaryService').ImpactSummary, message: Signal['message'], usedThreadContext?: boolean }} input
  * @returns {Signal}
  */
 function createSignal({ types, summary, message, usedThreadContext = false }) {
@@ -142,32 +144,36 @@ function isWithinDays(iso, days) {
   return ageMs >= 0 && ageMs <= days * 24 * 60 * 60 * 1000;
 }
 
-// Signal types that represent revenue opportunity for statsSummary()'s convenience roll-up.
-const REVENUE_SIGNAL_TYPES = new Set(['expansion_opportunity', 'upgrade_intent', 'enterprise_buying_intent', 'pricing_intent']);
-const RISK_SIGNAL_TYPES = new Set(['churn_risk', 'customer_frustration', 'negative_sentiment']);
+// Roll-up categories for statsSummary()'s convenience counters.
+const NEED_SIGNAL_TYPES = new Set([
+  'help_request', 'urgent_need', 'transport_need', 'food_insecurity',
+  'housing_need', 'medical_need', 'emotional_support_need', 'resource_request',
+]);
+const OFFER_SIGNAL_TYPES = new Set(['volunteer_offer', 'donation_offer', 'skill_offer', 'resource_available']);
+const URGENT_SIGNAL_TYPES = new Set(['urgent_need', 'medical_need']);
 
 /**
- * Aggregated stats for the App Home dashboard and /gb-report.
+ * Aggregated stats for the App Home dashboard and /cb-impact.
  */
 function statsSummary() {
   const byType = {};
   const byChannel = {};
-  const byCustomer = {};
-  let revenueOpportunities = 0;
-  let churnRisks = 0;
-  let featureRequests = 0;
+  const byMember = {};
+  let communityNeeds = 0;
+  let offersOfHelp = 0;
+  let urgentNeeds = 0;
 
   for (const signal of store.signals) {
     for (const t of signal.types) {
       byType[t.type] = (byType[t.type] || 0) + 1;
-      if (REVENUE_SIGNAL_TYPES.has(t.type)) revenueOpportunities += 1;
-      if (RISK_SIGNAL_TYPES.has(t.type)) churnRisks += 1;
-      if (t.type === 'feature_request') featureRequests += 1;
+      if (NEED_SIGNAL_TYPES.has(t.type)) communityNeeds += 1;
+      if (OFFER_SIGNAL_TYPES.has(t.type)) offersOfHelp += 1;
+      if (URGENT_SIGNAL_TYPES.has(t.type)) urgentNeeds += 1;
     }
     const channel = signal.message?.channel_id || 'unknown';
     byChannel[channel] = (byChannel[channel] || 0) + 1;
-    const customer = signal.message?.author_name || signal.message?.author_user_id || 'unknown';
-    byCustomer[customer] = (byCustomer[customer] || 0) + 1;
+    const member = signal.message?.author_name || signal.message?.author_user_id || 'unknown';
+    byMember[member] = (byMember[member] || 0) + 1;
   }
 
   const trend7d = Array.from({ length: 7 }, (_, i) => {
@@ -180,26 +186,27 @@ function statsSummary() {
   });
 
   const topChannels = Object.entries(byChannel).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const topCustomers = Object.entries(byCustomer).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topMembers = Object.entries(byMember).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   return {
     total_signals: store.signals.length,
     signals_today: store.signals.filter((s) => isToday(s.created_at)).length,
     signals_last_7_days: store.signals.filter((s) => isWithinDays(s.created_at, 7)).length,
     open_signals: store.signals.filter((s) => s.status === 'new').length,
+    claimed_signals: store.signals.filter((s) => s.status === 'reviewed').length,
     false_positives: store.signals.filter((s) => s.status === 'false_positive').length,
     by_type: byType,
     top_channels: topChannels,
-    top_customers: topCustomers,
-    revenue_opportunities: revenueOpportunities,
-    churn_risks: churnRisks,
-    feature_requests: featureRequests,
+    top_members: topMembers,
+    community_needs: communityNeeds,
+    offers_of_help: offersOfHelp,
+    urgent_needs: urgentNeeds,
     trend_7d: trend7d,
   };
 }
 
 /**
- * Stats scoped to "today," used by /gb-report — mirrors the shape the original
+ * Stats scoped to "today," used by /cb-impact — mirrors the shape the original
  * daily report expected (requests_found / etc.) but for signals.
  */
 function statsForToday() {

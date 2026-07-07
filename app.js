@@ -20,7 +20,7 @@ registerListeners(app);
 (async () => {
   try {
     await app.start();
-    console.log('🚀 Growth Beacon is running (Socket Mode)');
+    console.log('🤝 Community Beacon is running (Socket Mode)');
   } catch (error) {
     console.error('Failed to start app:', error);
     process.exit(1);

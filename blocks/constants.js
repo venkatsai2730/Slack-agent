@@ -1,48 +1,48 @@
 // Shared display constants used across signal cards, the dashboard, and reports.
 
 const SIGNAL_EMOJI = {
-  pricing_intent: '💰',
-  upgrade_intent: '⬆️',
-  expansion_opportunity: '📈',
-  feature_request: '💡',
-  competitor_mention: '⚔️',
-  integration_request: '🔌',
-  churn_risk: '🚨',
-  customer_frustration: '😠',
-  positive_sentiment: '😊',
-  negative_sentiment: '😞',
-  enterprise_buying_intent: '🏢',
-  decision_maker_involvement: '🎯',
-  budget_discussion: '💵',
-  timeline_discussion: '⏰',
-  security_concern: '🔒',
+  help_request: '🙋',
+  urgent_need: '🚨',
+  transport_need: '🚗',
+  food_insecurity: '🍲',
+  housing_need: '🏠',
+  medical_need: '🏥',
+  emotional_support_need: '💛',
+  resource_request: '📋',
+  volunteer_offer: '🙌',
+  donation_offer: '🎁',
+  skill_offer: '🛠️',
+  resource_available: '📦',
+  event_coordination: '📅',
+  gratitude_report: '🌟',
+  follow_up_needed: '🔁',
 };
 
 const SIGNAL_LABEL = {
-  pricing_intent: 'Pricing Intent',
-  upgrade_intent: 'Upgrade Intent',
-  expansion_opportunity: 'Expansion Opportunity',
-  feature_request: 'Feature Request',
-  competitor_mention: 'Competitor Mention',
-  integration_request: 'Integration Request',
-  churn_risk: 'Churn Risk',
-  customer_frustration: 'Customer Frustration',
-  positive_sentiment: 'Positive Sentiment',
-  negative_sentiment: 'Negative Sentiment',
-  enterprise_buying_intent: 'Enterprise Buying Intent',
-  decision_maker_involvement: 'Decision-Maker Involvement',
-  budget_discussion: 'Budget Discussion',
-  timeline_discussion: 'Timeline Discussion',
-  security_concern: 'Security Concern',
+  help_request: 'Help Request',
+  urgent_need: 'Urgent Need',
+  transport_need: 'Transport Need',
+  food_insecurity: 'Food Insecurity',
+  housing_need: 'Housing Need',
+  medical_need: 'Medical Need',
+  emotional_support_need: 'Emotional Support Need',
+  resource_request: 'Resource Request',
+  volunteer_offer: 'Volunteer Offer',
+  donation_offer: 'Donation Offer',
+  skill_offer: 'Skill Offer',
+  resource_available: 'Resource Available',
+  event_coordination: 'Event Coordination',
+  gratitude_report: 'Gratitude Report',
+  follow_up_needed: 'Follow-Up Needed',
 };
 
 const STATUS_LABEL = {
-  new: '🆕 New',
-  reviewed: '✅ Reviewed',
-  false_positive: '🚫 False positive',
+  new: '🆕 Needs attention',
+  reviewed: '🙋 Claimed',
+  false_positive: '🚫 Not a request',
 };
 
-const TIER_EMOJI = { hot: '🔥', warm: '🌤️', cold: '❄️' };
+const TIER_EMOJI = { critical: '🚨', high: '⚠️', routine: '✅' };
 
 /**
  * Renders a confidence score (0-1) as a 5-dot bar for compact display in Block Kit.

@@ -4,9 +4,9 @@
 // only delivers inside app_mention / message event payloads — never in slash
 // command payloads. We cache the freshest one so slash commands can piggyback.
 //
-// This module is intentionally domain-agnostic (no growth-specific query strings
-// live here) — see services/searchService.js for the Growth Beacon search queries
-// built on top of searchMessages().
+// This module is intentionally domain-agnostic (no domain-specific query strings
+// live here) — see services/searchService.js for the Community Beacon search
+// queries built on top of searchMessages().
 
 const MAX_TOKEN_AGE_MS = 2 * 60 * 1000;
 let cached = { token: null, receivedAt: 0 };

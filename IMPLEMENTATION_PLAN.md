@@ -1,6 +1,8 @@
 # Implementation Plan — Growth Beacon
 
-**Status: superseded plan revision.** This replaces the original Community-Impact-Agent-focused plan. The product pivoted from "community help request tracker" to **Growth Beacon**, an AI Growth Intelligence Slack agent for Product-Led-Growth companies (buying intent, expansion, churn-risk, and competitor-mention detection). The original `PROJECT_ANALYSIS.md` describes the pre-pivot codebase; it remains useful as a record of the reusable scaffolding (Bolt/Socket Mode setup, the RTS `action_token` cache quirk, the `llm.js` OpenAI-compatible wrapper) that this plan carries forward rather than rebuilding.
+**Status: historical, superseded by the Community Beacon pivot.** The product has since pivoted again, from Growth Beacon (B2B growth intelligence) to **Community Beacon** (Slack Agent for Good — community needs and offers of help). See `CHANGELOG.md`'s "[Unreleased] — Community Beacon pivot" entry and `ARCHITECTURE.md` for the current design; this file is kept only as a record of the Growth Beacon phase sequencing, most of which (Bolt/Socket Mode setup, RTS wrapper, MCP server pattern, CRM provider abstraction, typing strategy) carried forward unchanged into the current codebase.
+
+This replaces the original Community-Impact-Agent-focused plan. The product pivoted from "community help request tracker" to **Growth Beacon**, an AI Growth Intelligence Slack agent for Product-Led-Growth companies (buying intent, expansion, churn-risk, and competitor-mention detection). The original `PROJECT_ANALYSIS.md` describes the pre-pivot codebase; it remains useful as a record of the reusable scaffolding (Bolt/Socket Mode setup, the RTS `action_token` cache quirk, the `llm.js` OpenAI-compatible wrapper) that this plan carries forward rather than rebuilding.
 
 ## Locked architectural decisions (resolved before implementation started)
 

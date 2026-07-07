@@ -19,8 +19,8 @@ const mockCrm = require('../services/crm/mockProvider');
 /** @type {import('../services/signalStore').Signal} */
 const sampleSignal = /** @type {any} */ ({
   signal_id: 'signal_test_1',
-  primary_type: 'pricing_intent',
-  summary: { what_happened: 'Customer asked about enterprise pricing.' },
+  primary_type: 'help_request',
+  summary: { what_happened: 'A neighbor asked for help getting groceries this week.' },
   message: { author_name: 'Jane Doe', author_user_id: 'U1' },
 });
 
@@ -34,13 +34,13 @@ test('createFollowup records a followup tied to the signal', async () => {
   assert.ok(followupId.startsWith('mockcrm_followup_'));
 });
 
-test('getCustomerContext returns null for an unknown customer', async () => {
-  const context = await mockCrm.getCustomerContext('Nobody Ever Logged');
+test('getConstituentContext returns null for an unknown member', async () => {
+  const context = await mockCrm.getConstituentContext('Nobody Ever Logged');
   assert.equal(context, null);
 });
 
-test('getCustomerContext aggregates prior activity and open follow-ups', async () => {
-  const context = await mockCrm.getCustomerContext('Jane Doe');
+test('getConstituentContext aggregates prior activity and open follow-ups', async () => {
+  const context = await mockCrm.getConstituentContext('Jane Doe');
   assert.ok(context);
   assert.equal(context.total_activities, 1);
   assert.equal(context.open_followups, 1);

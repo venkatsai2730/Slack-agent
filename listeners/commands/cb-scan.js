@@ -2,7 +2,7 @@ const rts = require('../../services/rts');
 const { runScan, parseHoursBack, makeChannelPoster } = require('../../services/scan');
 
 module.exports = (app) => {
-  app.command('/gb-scan', async ({ command, ack, respond, client, logger, context }) => {
+  app.command('/cb-scan', async ({ command, ack, respond, client, logger, context }) => {
     await ack();
 
     // Slash command payloads never include an action_token (required for RTS with a

@@ -1,6 +1,6 @@
-// Fully functional mock CRM: persists to data/crm-mock.json, same write-through
-// pattern as services/signalStore.js. Good enough to demo the CRM-integration
-// flow end-to-end without any external account.
+// Fully functional mock case log: persists to data/crm-mock.json, same
+// write-through pattern as services/signalStore.js. Good enough to demo the
+// case-management flow end-to-end without any external account.
 
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +30,7 @@ function save() {
     fs.writeFileSync(tmpFile, JSON.stringify(store, null, 2));
     fs.renameSync(tmpFile, DATA_FILE);
   } catch (err) {
-    console.error('Could not persist mock CRM data:', err.message);
+    console.error('Could not persist mock case-log data:', err.message);
   }
 }
 
@@ -44,7 +44,7 @@ async function logSignal(signal) {
   store.activities.push({
     record_id: recordId,
     signal_id: signal.signal_id,
-    customer: signal.message?.author_name || signal.message?.author_user_id || 'unknown',
+    constituent: signal.message?.author_name || signal.message?.author_user_id || 'unknown',
     primary_type: signal.primary_type,
     summary: signal.summary?.what_happened || '',
     logged_at: new Date().toISOString(),
@@ -74,21 +74,23 @@ async function createFollowup(signal, owner) {
 }
 
 /**
- * @param {string} identifier customer name, Slack user id, or email
+ * Prior help history for a community member: "has this neighbor asked before,
+ * and is anyone already following up?"
+ * @param {string} identifier member name, Slack user id, or email
  * @returns {Promise<object|null>}
  */
-async function getCustomerContext(identifier) {
-  const activities = store.activities.filter((a) => a.customer === identifier);
+async function getConstituentContext(identifier) {
+  const activities = store.activities.filter((a) => a.constituent === identifier);
   const followups = store.followups.filter((f) =>
     activities.some((a) => a.signal_id === f.signal_id)
   );
   if (!activities.length) return null;
   return {
-    customer: identifier,
+    constituent: identifier,
     total_activities: activities.length,
     open_followups: followups.filter((f) => f.status === 'open').length,
     recent_activities: activities.slice(-5).reverse(),
   };
 }
 
-module.exports = { logSignal, createFollowup, getCustomerContext };
+module.exports = { logSignal, createFollowup, getConstituentContext };

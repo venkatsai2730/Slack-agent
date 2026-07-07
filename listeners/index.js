@@ -1,8 +1,8 @@
 const appMention = require('./events/app-mention');
 const message = require('./events/message');
-const gbScan = require('./commands/gb-scan');
-const gbSignals = require('./commands/gb-signals');
-const gbReport = require('./commands/gb-report');
+const cbScan = require('./commands/cb-scan');
+const cbNeeds = require('./commands/cb-needs');
+const cbImpact = require('./commands/cb-impact');
 const signalActions = require('./actions/signal-actions');
 const assistant = require('./assistant');
 const appHome = require('./app-home');
@@ -10,9 +10,9 @@ const appHome = require('./app-home');
 module.exports = (app) => {
   appMention(app);
   message(app);
-  gbScan(app);
-  gbSignals(app);
-  gbReport(app);
+  cbScan(app);
+  cbNeeds(app);
+  cbImpact(app);
   signalActions(app);
   assistant(app);
   appHome(app);

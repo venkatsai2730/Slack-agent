@@ -1,32 +1,32 @@
-// Growth-Beacon-specific search: builds on services/rts.js (Real-Time Search) and
-// adds thread/context lookups the intent engine and MCP tools need. Also provides
+// Community-Beacon-specific search: builds on services/rts.js (Real-Time Search)
+// and adds thread/context lookups the signal engine and MCP tools need. Also provides
 // a fallback path for callers with no cached RTS action_token (e.g. the MCP server,
 // which runs as a separate process with no Slack event stream to harvest one from).
 
 const rts = require('./rts');
 
-const GROWTH_SIGNAL_QUERY =
-  'pricing OR upgrade OR enterprise OR competitor OR integrate OR integration OR cancel OR downgrade ' +
-  'OR expensive OR budget OR contract OR renew OR churn OR frustrated OR frustrating OR "not working" ' +
-  'OR security OR compliance OR "feature request" OR roadmap';
+const COMMUNITY_SIGNAL_QUERY =
+  'help OR need OR volunteer OR donate OR donation OR urgent OR emergency OR support ' +
+  'OR food OR meal OR groceries OR shelter OR housing OR rent OR ride OR transport ' +
+  'OR medicine OR prescription OR supplies OR childcare OR "looking for" OR "can anyone"';
 
 // Cheap, dependency-free keyword filter used by the non-RTS fallback path below.
 const KEYWORD_FILTER =
-  /pricing|price|cost|upgrade|downgrade|cancel|churn|competitor|enterprise|security|compliance|integrat|budget|contract|renew|feature request|roadmap|frustrat|not working|urgent|decision.?maker|procurement|timeline|deadline/i;
+  /help|need|volunteer|donat|urgent|emergency|support|assist|food|meal|grocer|shelter|housing|rent|evict|ride|transport|medicine|prescription|clinic|supplies|clothes|furniture|childcare|babysit|elderly|senior|accessib|looking for|can anyone/i;
 
 /**
  * @typedef {import('./rts').RtsMessage} SearchResultMessage
  */
 
 /**
- * Searches recent messages in a channel for growth-signal language via Real-Time
+ * Searches recent messages in a channel for community-signal language via Real-Time
  * Search. Requires a fresh RTS action_token; use searchWithFallback() when one
  * may not be available.
  * @param {import('@slack/bolt').webApi.WebClient} client
  * @param {{ channelId?: string, hoursBack: number, actionToken: string, query?: string }} opts
  * @returns {Promise<SearchResultMessage[]>}
  */
-async function searchGrowthSignals(client, { channelId, hoursBack, actionToken, query = GROWTH_SIGNAL_QUERY }) {
+async function searchCommunitySignals(client, { channelId, hoursBack, actionToken, query = COMMUNITY_SIGNAL_QUERY }) {
   return rts.searchMessages(client, { channelId, hoursBack, actionToken, query });
 }
 
@@ -68,7 +68,7 @@ async function searchChannelHistoryFallback(client, { channelId, hoursBack, quer
 async function searchWithFallback(client, { channelId, hoursBack, actionToken, query }) {
   if (actionToken) {
     try {
-      return await searchGrowthSignals(client, { channelId, hoursBack, actionToken, query });
+      return await searchCommunitySignals(client, { channelId, hoursBack, actionToken, query });
     } catch (err) {
       console.error('Real-Time Search failed, falling back to conversations.history:', err.message);
     }
@@ -100,8 +100,8 @@ function extractMentionedUserIds(text = '') {
 }
 
 module.exports = {
-  GROWTH_SIGNAL_QUERY,
-  searchGrowthSignals,
+  COMMUNITY_SIGNAL_QUERY,
+  searchCommunitySignals,
   searchChannelHistoryFallback,
   searchWithFallback,
   getThreadContext,

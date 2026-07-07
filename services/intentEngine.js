@@ -1,47 +1,51 @@
-// Intent Intelligence Engine: classifies a Slack message (plus optional thread
-// context) into zero or more business growth signals, each with a confidence
-// score, supporting evidence, AI reasoning, and a recommended next action.
+// Community Signal Engine: classifies a Slack message (plus optional thread
+// context) into zero or more community-impact signals — calls for help, offers
+// of help, and coordination moments — each with a confidence score, supporting
+// evidence, AI reasoning, and a recommended next action.
 
 const { complete, extractJson } = require('./llm');
 
 /** Fixed vocabulary of signal types the engine is allowed to emit. */
 const SIGNAL_TYPES = [
-  'pricing_intent',
-  'upgrade_intent',
-  'expansion_opportunity',
-  'feature_request',
-  'competitor_mention',
-  'integration_request',
-  'churn_risk',
-  'customer_frustration',
-  'positive_sentiment',
-  'negative_sentiment',
-  'enterprise_buying_intent',
-  'decision_maker_involvement',
-  'budget_discussion',
-  'timeline_discussion',
-  'security_concern',
+  // Needs — someone requires help
+  'help_request',
+  'urgent_need',
+  'transport_need',
+  'food_insecurity',
+  'housing_need',
+  'medical_need',
+  'emotional_support_need',
+  'resource_request',
+  // Offers — someone has capacity to help
+  'volunteer_offer',
+  'donation_offer',
+  'skill_offer',
+  'resource_available',
+  // Coordination & outcomes
+  'event_coordination',
+  'gratitude_report',
+  'follow_up_needed',
 ];
 
-// Cheap pre-filter so a plain "lol" or "thanks!" message never reaches the LLM.
+// Cheap pre-filter so a plain "lol" or "see you at standup" message never reaches the LLM.
 const KEYWORD_HINTS =
-  /pricing|price|cost|upgrade|downgrade|cancel|churn|competitor|enterprise|security|compliance|integrat|budget|contract|renew|feature request|roadmap|frustrat|not working|slow|bug|urgent|decision.?maker|procurement|timeline|deadline|quote|proposal|CFO|CTO|VP |director/i;
+  /help|need|volunteer|donat|urgent|emergency|support|assist|struggling|food|meal|grocer|hungry|pantry|shelter|housing|homeless|evict|rent|ride|drive|transport|pick.?up|medicine|prescription|doctor|medical|clinic|pharmacy|lonely|anxious|overwhelmed|crisis|supplies|clothes|clothing|furniture|blanket|fundrais|collect|spare|drop.?off|can anyone|anyone able|looking for|available to|happy to|offer|thank you so much|childcare|babysit|elderly|senior|disabled|wheelchair|accessib/i;
 
-const SYSTEM_PROMPT = `You are a B2B SaaS growth intelligence analyst reviewing a single Slack message (and optional thread context) for a product-led-growth company.
+const SYSTEM_PROMPT = `You are a community-impact analyst reviewing a single Slack message (and optional thread context) for a mutual-aid / nonprofit community workspace. Your job is to make sure no call for help — and no offer of help — goes unnoticed.
 
-Identify every business signal present, using ONLY these exact type strings: ${SIGNAL_TYPES.join(', ')}.
+Identify every community signal present, using ONLY these exact type strings: ${SIGNAL_TYPES.join(', ')}.
 
 For each signal you detect, include:
 - "type": one of the exact strings above
 - "confidence": a number from 0 to 1 reflecting how certain you are
 - "evidence": the exact quoted phrase from the message that supports this signal
 - "reasoning": one sentence explaining why this text indicates the signal
-- "recommended_action": one concrete next step for a Growth, Sales, Customer Success, or Product team member
+- "recommended_action": one concrete next step for a community coordinator or volunteer
 
 Respond with ONLY a JSON object, no other text:
 { "signals": [ { "type": "...", "confidence": 0.0, "evidence": "...", "reasoning": "...", "recommended_action": "..." } ] }
 
-If no meaningful business signal is present (e.g. small talk, a bot command, an unrelated question), respond with { "signals": [] }. Never invent a signal the text doesn't support.`;
+If no meaningful community signal is present (e.g. small talk, a bot command, an unrelated question), respond with { "signals": [] }. Never invent a signal the text doesn't support. Treat mentions of medical distress, housing loss, or food insecurity as high-confidence needs even when phrased indirectly or with embarrassment.`;
 
 /**
  * @typedef {Object} DetectedSignal
@@ -62,7 +66,7 @@ function hasKeywordHint(text = '') {
 }
 
 /**
- * Detects growth signals in a message using the LLM, gated by a keyword
+ * Detects community signals in a message using the LLM, gated by a keyword
  * pre-filter to avoid spending an LLM call on every single Slack message.
  * @param {string} text
  * @param {{ threadContext?: string }} [opts]
@@ -81,7 +85,7 @@ async function detectSignals(text, { threadContext = '' } = {}) {
     const raw = await complete(SYSTEM_PROMPT, userPrompt);
     parsed = extractJson(raw, { signals: [] });
   } catch (err) {
-    console.error('Intent detection failed:', err.message);
+    console.error('Signal detection failed:', err.message);
     return [];
   }
 

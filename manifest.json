@@ -1,8 +1,8 @@
 {
   "display_information": {
-    "name": "Growth Beacon",
-    "description": "Detects buying intent, expansion signals, competitor mentions, and churn risk in Slack — turns them into CRM-ready business intelligence.",
-    "background_color": "#0A2540"
+    "name": "Community Beacon",
+    "description": "Makes sure no call for help goes unanswered — detects community needs and offers of help in Slack, matches them, and tracks impact.",
+    "background_color": "#155E3F"
   },
   "features": {
     "app_home": {
@@ -11,37 +11,37 @@
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "Growth Beacon",
+      "display_name": "Community Beacon",
       "always_online": true
     },
     "assistant_view": {
-      "assistant_description": "I monitor Slack conversations for buying intent, expansion opportunities, churn risk, and other growth signals, and turn them into CRM-ready business intelligence.",
+      "assistant_description": "I watch community Slack channels for calls for help — food, housing, transport, medical, emotional support — and offers of help, match them to each other, and track impact so no one falls through the cracks.",
       "suggested_prompts": [
         {
-          "title": "How do I scan for signals?",
-          "message": "How do I scan a channel for growth signals?"
+          "title": "How do I scan for needs?",
+          "message": "How do I scan a channel for community needs?"
         },
         {
-          "title": "Show recent signals",
-          "message": "What growth signals have been detected recently?"
+          "title": "Show recent needs",
+          "message": "What community needs have been detected recently?"
         }
       ]
     },
     "slash_commands": [
       {
-        "command": "/gb-scan",
-        "description": "Scan this channel for recent growth signals",
+        "command": "/cb-scan",
+        "description": "Scan this channel for recent community needs and offers of help",
         "usage_hint": "[hours-back, default 24]",
         "should_escape": false
       },
       {
-        "command": "/gb-signals",
-        "description": "List recently detected growth signals",
+        "command": "/cb-needs",
+        "description": "List recently detected community needs and offers",
         "should_escape": false
       },
       {
-        "command": "/gb-report",
-        "description": "Post today's growth intelligence report",
+        "command": "/cb-impact",
+        "description": "Post today's community impact report",
         "should_escape": false
       }
     ]

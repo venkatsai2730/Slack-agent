@@ -12,7 +12,7 @@ function reportBlocks({ stats, narrative }) {
   return [
     {
       type: 'header',
-      text: { type: 'plain_text', text: `🌟 Growth Intelligence Report — ${stats.date}` },
+      text: { type: 'plain_text', text: `🌟 Community Impact Report — ${stats.date}` },
     },
     {
       type: 'section',

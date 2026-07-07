@@ -2,11 +2,11 @@ const rts = require('../../services/rts');
 const { runScan, parseHoursBack, makeChannelPoster } = require('../../services/scan');
 
 const HELP_TEXT =
-  'Hi! I monitor Slack for growth signals — buying intent, expansion opportunities, churn risk, and more. Try:\n' +
-  '• `@Growth Beacon scan` — find growth signals from the last 24h\n' +
-  '• `@Growth Beacon scan 48` — look back 48 hours\n' +
-  '• `/gb-signals` — see recently detected signals\n' +
-  '• `/gb-report` — post today\'s growth intelligence report';
+  'Hi! I watch this community for calls for help and offers of help — so nothing gets lost in the scroll. Try:\n' +
+  '• `@Community Beacon scan` — find community signals from the last 24h\n' +
+  '• `@Community Beacon scan 48` — look back 48 hours\n' +
+  '• `/cb-needs` — see recently detected needs and offers\n' +
+  '• `/cb-impact` — post today\'s community impact report';
 
 module.exports = (app) => {
   app.event('app_mention', async ({ event, body, client, say, logger, context }) => {

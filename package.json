@@ -1,13 +1,13 @@
 {
-  "name": "growth-beacon",
+  "name": "community-beacon",
   "version": "1.0.0",
-  "description": "AI Growth Intelligence Slack agent for Product-Led Growth teams — detects buying intent, expansion signals, competitor mentions, and churn risk in Slack conversations, and turns them into CRM-ready business intelligence.",
+  "description": "AI community-impact Slack agent for mutual-aid groups and nonprofits — detects calls for help (food, housing, transport, medical, emotional support) and offers of help in Slack conversations, matches them to each other, and tracks the impact so no request goes unanswered.",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
     "mcp": "node mcp/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\""
   },
   "engines": {
     "node": ">=18"

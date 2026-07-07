@@ -1,6 +1,6 @@
-// HubSpot CRM provider — STUB. Not wired to the real HubSpot API because no
+// HubSpot case-log provider — STUB. Not wired to the real HubSpot API because no
 // sandbox credentials were available at implementation time (see
-// IMPLEMENTATION_PLAN.md, "Locked architectural decisions", item 2).
+// ARCHITECTURE.md, "Locked architectural decisions", item 2).
 //
 // To implement: use the HubSpot CRM API (Engagements / Timeline API,
 // https://developers.hubspot.com/docs/api/crm/engagements) with HUBSPOT_API_KEY
@@ -12,10 +12,10 @@
 function requireConfigured() {
   if (!process.env.HUBSPOT_API_KEY) {
     throw new Error(
-      'HubSpot CRM provider is not configured. Set HUBSPOT_API_KEY and implement services/crm/hubspotProvider.js.'
+      'HubSpot provider is not configured. Set HUBSPOT_API_KEY and implement services/crm/hubspotProvider.js.'
     );
   }
-  throw new Error('HubSpot CRM provider is stubbed and not yet implemented — see services/crm/hubspotProvider.js.');
+  throw new Error('HubSpot provider is stubbed and not yet implemented — see services/crm/hubspotProvider.js.');
 }
 
 /** @param {import('../signalStore').Signal} signal @returns {Promise<{ recordId: string }>} */
@@ -29,8 +29,8 @@ async function createFollowup(signal, owner) {
 }
 
 /** @param {string} identifier @returns {Promise<object|null>} */
-async function getCustomerContext(identifier) {
+async function getConstituentContext(identifier) {
   requireConfigured();
 }
 
-module.exports = { logSignal, createFollowup, getCustomerContext };
+module.exports = { logSignal, createFollowup, getConstituentContext };

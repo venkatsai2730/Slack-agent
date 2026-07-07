@@ -2,7 +2,7 @@ const rts = require('../../services/rts');
 const { processMessageForSignals } = require('../../services/scan');
 
 // Continuous monitoring: every genuine new message is opportunistically checked
-// for growth signals (gated by intentEngine's cheap keyword pre-filter and the
+// for community signals (gated by intentEngine's cheap keyword pre-filter and the
 // SIGNAL_CONFIDENCE_THRESHOLD, so most messages never reach the LLM and most
 // LLM calls that do run don't result in a posted alert).
 module.exports = (app) => {
@@ -13,7 +13,7 @@ module.exports = (app) => {
     if (event.subtype || event.bot_id || !event.text || event.user === context.botUserId) return;
 
     try {
-      const target = process.env.GROWTH_ALERTS_CHANNEL;
+      const target = process.env.COMMUNITY_ALERTS_CHANNEL;
       let permalink = '';
       try {
         const res = await client.chat.getPermalink({ channel: event.channel, message_ts: event.ts });

@@ -1,5 +1,5 @@
 services:
-  community-impact-agent:
+  community-beacon:
     build: .
     env_file: .env
     restart: unless-stopped
