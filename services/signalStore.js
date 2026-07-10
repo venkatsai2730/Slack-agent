@@ -190,7 +190,9 @@ function markFalsePositive(signalId, userId) {
 
 /** @param {string} signalId @param {string} userId */
 function assignOwner(signalId, userId) {
-  return updateSignal(signalId, { owner: userId, status: 'reviewed' });
+  const updated = updateSignal(signalId, { owner: userId, status: 'reviewed' });
+  recordTimelineEvent(signalId, 'claimed', `Claimed by ${userId}`);
+  return updated;
 }
 
 /** @param {string} signalId @param {string} recordId */
