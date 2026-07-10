@@ -20,6 +20,13 @@ const DATA_FILE = path.join(DATA_DIR, 'signals.json');
  * @property {string|null} owner
  * @property {boolean} crm_logged
  * @property {string|null} crm_record_id
+ * @property {{ at: string, stage: string, detail: string }[]} timeline
+ * @property {{ escalated: boolean, escalated_at: string|null, reminder_count: number, last_reminder_at: string|null }} escalation
+ * @property {{ resolved: boolean, resolved_at: string|null, resolution_type: string|null }} resolution
+ * @property {{ signal_id: string, confidence: number, decided_by: string, decided_at: string }|null} confirmed_match
+ * @property {'high'|'medium'|'low'|null} decision_branch
+ * @property {{ branch: 'high'|'medium'|'low', confidence: number, explanation: string, candidate: { signal_id: string, primary_type: string, what_happened: string, author_name: string, permalink: string }|null }|null} match_recommendation
+ * @property {string[]} rejected_candidates signal_ids a coordinator has explicitly rejected as a match — excluded from future re-decisions for this signal
  * @property {string} created_at
  * @property {string} updated_at
  */
@@ -27,11 +34,28 @@ const DATA_FILE = path.join(DATA_DIR, 'signals.json');
 let store = { signals: [], scans: [] };
 let counter = 0;
 
+// Backfills fields added after a given signal was first persisted, so a
+// pre-existing data/signals.json (from before Features 1-5) loads cleanly
+// instead of leaving old records with undefined timeline/escalation/etc.
+function backfillSignal(signal) {
+  if (!Array.isArray(signal.timeline)) {
+    signal.timeline = [{ at: signal.created_at, stage: 'signal_detected', detail: `Detected ${signal.primary_type}` }];
+  }
+  if (!signal.escalation) signal.escalation = { escalated: false, escalated_at: null, reminder_count: 0, last_reminder_at: null };
+  if (!signal.resolution) signal.resolution = { resolved: false, resolved_at: null, resolution_type: null };
+  if (signal.confirmed_match === undefined) signal.confirmed_match = null;
+  if (signal.decision_branch === undefined) signal.decision_branch = null;
+  if (signal.match_recommendation === undefined) signal.match_recommendation = null;
+  if (!Array.isArray(signal.rejected_candidates)) signal.rejected_candidates = [];
+  return signal;
+}
+
 function load() {
   try {
     store = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (!Array.isArray(store.signals)) store.signals = [];
     if (!Array.isArray(store.scans)) store.scans = [];
+    store.signals = store.signals.map(backfillSignal);
     counter = store.signals.length;
   } catch (err) {
     if (err.code !== 'ENOENT') console.error('signals.json exists but could not be parsed, starting empty:', err.message);
@@ -66,11 +90,12 @@ function pickPrimaryType(detected) {
 function createSignal({ types, summary, message, usedThreadContext = false }) {
   counter += 1;
   const now = new Date().toISOString();
+  const primaryType = pickPrimaryType(types);
   /** @type {Signal} */
   const signal = {
     signal_id: `signal_${Date.now()}_${counter}`,
     types,
-    primary_type: pickPrimaryType(types),
+    primary_type: primaryType,
     summary,
     message,
     used_thread_context: usedThreadContext,
@@ -78,6 +103,13 @@ function createSignal({ types, summary, message, usedThreadContext = false }) {
     owner: null,
     crm_logged: false,
     crm_record_id: null,
+    timeline: [{ at: now, stage: 'signal_detected', detail: `Detected ${primaryType}` }],
+    escalation: { escalated: false, escalated_at: null, reminder_count: 0, last_reminder_at: null },
+    resolution: { resolved: false, resolved_at: null, resolution_type: null },
+    confirmed_match: null,
+    decision_branch: null,
+    match_recommendation: null,
+    rejected_candidates: [],
     created_at: now,
     updated_at: now,
   };
@@ -106,7 +138,8 @@ function updateSignal(signalId, patch) {
 /** @param {string} signalId @param {string} userId */
 function markFalsePositive(signalId, userId) {
   const existing = getSignal(signalId);
-  return updateSignal(signalId, { status: 'false_positive', owner: existing?.owner || userId });
+  updateSignal(signalId, { status: 'false_positive', owner: existing?.owner || userId });
+  return resolveSignal(signalId, 'false_positive');
 }
 
 /** @param {string} signalId @param {string} userId */
@@ -119,6 +152,117 @@ function markCrmLogged(signalId, recordId) {
   return updateSignal(signalId, { crm_logged: true, crm_record_id: recordId });
 }
 
+/**
+ * Appends an entry to a signal's reasoning timeline (Feature 5). Silently
+ * no-ops for an unknown signal_id rather than throwing, since timeline
+ * recording is best-effort instrumentation, not core business logic.
+ * @param {string} signalId
+ * @param {string} stage
+ * @param {string} [detail]
+ */
+function recordTimelineEvent(signalId, stage, detail = '') {
+  const signal = getSignal(signalId);
+  if (!signal) return null;
+  signal.timeline.push({ at: new Date().toISOString(), stage, detail });
+  return updateSignal(signalId, { timeline: signal.timeline });
+}
+
+/**
+ * Marks a signal as resolved (matched, false-positive, or manually closed) and
+ * records the transition on the timeline. Idempotent — resolving an
+ * already-resolved signal just refreshes resolved_at.
+ * @param {string} signalId
+ * @param {'matched'|'false_positive'|'manual'} resolutionType
+ */
+function resolveSignal(signalId, resolutionType) {
+  const signal = getSignal(signalId);
+  if (!signal) return null;
+  const resolved_at = new Date().toISOString();
+  const updated = updateSignal(signalId, { resolution: { resolved: true, resolved_at, resolution_type: resolutionType } });
+  recordTimelineEvent(signalId, 'resolved', `Resolution: ${resolutionType}`);
+  return updated;
+}
+
+/**
+ * Confirms a HIGH/MEDIUM-confidence match between two signals (Feature 3's
+ * "one-click confirm" / coordinator-approve flow). Marks both sides resolved.
+ * @param {string} signalId
+ * @param {string} matchedSignalId
+ * @param {number} confidence
+ * @param {string} decidedBy Slack user ID of whoever confirmed/approved it
+ */
+function confirmMatch(signalId, matchedSignalId, confidence, decidedBy) {
+  const decided_at = new Date().toISOString();
+  // Recorded symmetrically on both signals (not just the one whose card the
+  // button was clicked on) so repeat-volunteer/requester lookups work
+  // regardless of whether a need or an offer card initiated the confirmation.
+  const updated = updateSignal(signalId, { confirmed_match: { signal_id: matchedSignalId, confidence, decided_by: decidedBy, decided_at } });
+  updateSignal(matchedSignalId, { confirmed_match: { signal_id: signalId, confidence, decided_by: decidedBy, decided_at } });
+  recordTimelineEvent(signalId, 'matched', `Matched with ${matchedSignalId} (confidence ${Math.round(confidence * 100)}%) by ${decidedBy}`);
+  recordTimelineEvent(matchedSignalId, 'matched', `Matched with ${signalId} (confidence ${Math.round(confidence * 100)}%) by ${decidedBy}`);
+  resolveSignal(signalId, 'matched');
+  resolveSignal(matchedSignalId, 'matched');
+  return updated;
+}
+
+/**
+ * Records that a coordinator rejected a suggested match, so a later
+ * re-decision (see matchDecision.js) never recommends the same candidate
+ * again for this signal.
+ * @param {string} signalId
+ * @param {string} candidateId
+ */
+function addRejectedCandidate(signalId, candidateId) {
+  const signal = getSignal(signalId);
+  if (!signal) return null;
+  if (signal.rejected_candidates.includes(candidateId)) return signal;
+  return updateSignal(signalId, { rejected_candidates: [...signal.rejected_candidates, candidateId] });
+}
+
+/** @param {string} signalId */
+function markEscalated(signalId) {
+  const signal = getSignal(signalId);
+  if (!signal) return null;
+  const now = new Date().toISOString();
+  const escalation = {
+    escalated: true,
+    escalated_at: signal.escalation.escalated_at || now,
+    reminder_count: signal.escalation.reminder_count + 1,
+    last_reminder_at: now,
+  };
+  const updated = updateSignal(signalId, { escalation });
+  recordTimelineEvent(signalId, 'escalated', `Reminder #${escalation.reminder_count} sent to coordinators`);
+  return updated;
+}
+
+/** @param {string} authorId Slack user ID */
+function getSignalsByAuthor(authorId) {
+  return store.signals.filter((s) => s.message?.author_user_id === authorId);
+}
+
+/** @param {string} channelId */
+function getSignalsByChannel(channelId) {
+  return store.signals.filter((s) => s.message?.channel_id === channelId);
+}
+
+/**
+ * Unresolved signals older than an hours threshold — the core query for the
+ * proactive escalation sweep (Feature 2).
+ * @param {number} hours
+ * @param {{ tier?: 'critical'|'high'|'routine' }} [opts]
+ */
+function listUnresolvedOlderThan(hours, { tier } = {}) {
+  const { scorePriority } = require('./priorityScore');
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  return store.signals.filter((s) => {
+    if (s.resolution?.resolved) return false;
+    if (s.status === 'false_positive') return false;
+    if (new Date(s.created_at).getTime() > cutoff) return false;
+    if (!tier) return true;
+    return scorePriority(s.types).tier === tier;
+  });
+}
+
 /** @param {number} [limit] */
 function listRecent(limit = 20) {
   return [...store.signals].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);
@@ -127,6 +271,11 @@ function listRecent(limit = 20) {
 /** @param {Signal['status']} status */
 function listByStatus(status) {
   return store.signals.filter((s) => s.status === status);
+}
+
+/** @returns {Signal[]} every signal, unfiltered — for cross-cutting aggregation (workspaceContext.js, analytics.js) */
+function listAll() {
+  return store.signals;
 }
 
 function logScan(signalsFound) {
@@ -232,8 +381,18 @@ module.exports = {
   markFalsePositive,
   assignOwner,
   markCrmLogged,
+  recordTimelineEvent,
+  resolveSignal,
+  confirmMatch,
+  addRejectedCandidate,
+  markEscalated,
+  getSignalsByAuthor,
+  getSignalsByChannel,
+  listUnresolvedOlderThan,
+  pickPrimaryType,
   listRecent,
   listByStatus,
+  listAll,
   logScan,
   statsSummary,
   statsForToday,

@@ -8,6 +8,8 @@ const intentEngine = require('./intentEngine');
 const summaryService = require('./summaryService');
 const signalStore = require('./signalStore');
 const matchService = require('./matchService');
+const workspaceContext = require('./workspaceContext');
+const matchDecision = require('./matchDecision');
 const crm = require('./crm');
 const { signalCardBlocks } = require('../blocks/signal-card');
 
@@ -15,9 +17,81 @@ const MAX_CANDIDATES_PER_SCAN = 5; // keep demo latency low
 
 /** @typedef {(msg: { text: string, blocks?: any[] }) => Promise<any>} PostFn */
 
+// Per-channel token bucket guarding LLM-triggering detection calls — the
+// keyword pre-filter in intentEngine.hasKeywordHint() is the only cost/abuse
+// control today; this adds a hard ceiling per channel per minute so a noisy
+// or adversarial channel can't drive unbounded LLM spend.
+const rateLimiter = (() => {
+  /** @type {Map<string, { count: number, windowStart: number }>} */
+  const buckets = new Map();
+  const WINDOW_MS = 60 * 1000;
+
+  function limit() {
+    const value = Number(process.env.RATE_LIMIT_LLM_PER_CHANNEL_PER_MIN);
+    return Number.isFinite(value) && value > 0 ? value : 20;
+  }
+
+  /** @param {string} channelId @returns {boolean} true if this call may proceed */
+  function allow(channelId) {
+    const now = Date.now();
+    const bucket = buckets.get(channelId);
+    if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
+      buckets.set(channelId, { count: 1, windowStart: now });
+      return true;
+    }
+    if (bucket.count >= limit()) return false;
+    bucket.count += 1;
+    return true;
+  }
+
+  return { allow };
+})();
+
 function confidenceThreshold() {
   const value = Number(process.env.SIGNAL_CONFIDENCE_THRESHOLD);
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0.6;
+}
+
+// LOW-confidence-match outreach target: a dedicated channel if configured,
+// otherwise the existing alerts channel, otherwise the source channel itself.
+function outreachChannel(sourceChannelId) {
+  return process.env.VOLUNTEERS_NEEDED_CHANNEL || process.env.COMMUNITY_ALERTS_CHANNEL || sourceChannelId;
+}
+
+/**
+ * Feature 3's LOW branch: no confident match found, so proactively ask the
+ * wider workspace for help instead of leaving the signal to rot unclaimed.
+ * @param {{ client: any, signal: import('./signalStore').Signal }} opts
+ */
+async function postOutreach({ client, signal }) {
+  if (!client) return;
+  const priority = require('./priorityScore').scorePriority(signal.types);
+  const target = outreachChannel(signal.message.channel_id);
+  const URGENCY_BY_TIER = { critical: 'Immediate', high: 'Same day', routine: 'Routine' };
+  const urgency = URGENCY_BY_TIER[priority.tier] || 'Routine';
+  try {
+    await client.chat.postMessage({
+      channel: target,
+      text: `📣 Volunteers needed: ${signal.summary.what_happened}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              `📣 *Volunteers needed*\n` +
+              `*Need:* ${signal.summary.what_happened}\n` +
+              `*Priority:* ${priority.tier} (${priority.score}/100)\n` +
+              `*Location:* <#${signal.message.channel_id}>\n` +
+              `*Urgency:* ${urgency}`,
+          },
+        },
+      ],
+    });
+    signalStore.recordTimelineEvent(signal.signal_id, 'outreach_posted', `Posted outreach to ${target} — no high/medium confidence match found`);
+  } catch (err) {
+    console.error('Outreach post failed (signal is still saved):', err.message);
+  }
 }
 
 // Parses an optional "hours back" argument (from slash command text or an
@@ -33,23 +107,37 @@ function makeChannelPoster(client, channelId) {
 }
 
 /**
- * Runs the full detect -> summarize -> persist -> case-log -> match -> post
- * pipeline for a single message. Returns the created Signal, or null if no
- * qualifying signal (below confidence threshold, or none detected) was found.
+ * Runs the full detect -> search history -> enrich -> summarize -> persist ->
+ * case-log -> match-decide -> post pipeline for a single message (Features
+ * 1, 3, 5, 7). Returns the created Signal, or null if no qualifying signal
+ * (below confidence threshold, none detected, or rate-limited) was found.
  * @param {{
  *   channelId: string, ts: string, text: string, authorId?: string, authorName?: string,
- *   permalink?: string, threadContext?: string, post: PostFn
+ *   permalink?: string, threadContext?: string, post: PostFn, client?: any, actionToken?: string|null
  * }} opts
  * @returns {Promise<import('./signalStore').Signal | null>}
  */
-async function processMessageForSignals({ channelId, ts, text, authorId, authorName, permalink, threadContext, post }) {
+async function processMessageForSignals({ channelId, ts, text, authorId, authorName, permalink, threadContext, post, client, actionToken }) {
+  // Rate-limit only messages that would actually reach the LLM (i.e. pass the
+  // keyword pre-filter) — gating on every message here would let ordinary
+  // channel chatter exhaust the budget and silently drop genuine signals
+  // that arrive later in the same minute.
+  const wouldReachLlm = intentEngine.hasKeywordHint(text) || intentEngine.hasKeywordHint(threadContext);
+  if (wouldReachLlm && !rateLimiter.allow(channelId)) return null;
+
   const detected = await intentEngine.detectSignals(text, { threadContext });
   if (!detected.length) return null;
 
   const topConfidence = Math.max(...detected.map((s) => s.confidence));
   if (topConfidence < confidenceThreshold()) return null;
 
-  const summary = await summaryService.summarizeConversation({ text, threadContext, signals: detected });
+  // Feature 1: search workspace history (structured signal history + a live
+  // RTS/fallback sweep) BEFORE summarizing, so the coordinator summary can
+  // reason over both the current message and everything that came before it.
+  const primaryType = signalStore.pickPrimaryType(detected);
+  const history = await workspaceContext.buildContext({ channelId, authorId: authorId || 'unknown', primaryType, text }, { client, actionToken });
+
+  const summary = await summaryService.summarizeConversation({ text, threadContext, signals: detected, history });
   const signal = signalStore.createSignal({
     types: detected,
     summary,
@@ -64,6 +152,13 @@ async function processMessageForSignals({ channelId, ts, text, authorId, authorN
     usedThreadContext: Boolean(threadContext),
   });
 
+  signalStore.recordTimelineEvent(
+    signal.signal_id,
+    'history_searched',
+    `Searched workspace history — ${history.related_messages.length} related message(s), ${history.unresolved_similar.length} unresolved similar signal(s)`
+  );
+  signalStore.recordTimelineEvent(signal.signal_id, 'context_enriched', history.summary_text);
+
   try {
     const { recordId } = await crm.getProvider().logSignal(signal);
     signalStore.markCrmLogged(signal.signal_id, recordId);
@@ -71,16 +166,32 @@ async function processMessageForSignals({ channelId, ts, text, authorId, authorN
     console.error('Case logging failed (signal is still saved locally):', err.message);
   }
 
-  // Deterministic need ↔ offer matching: an offer of help surfaces the open
-  // needs it could meet, and a new need surfaces recent unclaimed offers.
-  const matches = matchService.findMatches(signal);
+  // Feature 3: deterministic candidate generation (matchService, unchanged)
+  // followed by confidence-based branching (matchDecision) instead of a flat list.
+  const candidates = matchService.findMatches(signal);
+  const decision = matchDecision.decide(signal, candidates);
+  const matchRecommendation = matchDecision.toMatchRecommendation(decision);
+  signalStore.updateSignal(signal.signal_id, { decision_branch: decision.branch, match_recommendation: matchRecommendation });
+  signalStore.recordTimelineEvent(
+    signal.signal_id,
+    'match_decision',
+    `${decision.branch.toUpperCase()} confidence (${Math.round(decision.confidence * 100)}%): ${decision.explanation}`
+  );
+
+  if (decision.branch === 'low' && client) {
+    await postOutreach({ client, signal: signalStore.getSignal(signal.signal_id) });
+  }
+
+  if (summary.escalation_recommendation === 'yes') {
+    signalStore.recordTimelineEvent(signal.signal_id, 'escalation_recommended', 'AI recommended coordinator escalation based on workspace history.');
+  }
 
   await post({
     text: `${summary.what_happened}`,
-    blocks: signalCardBlocks(signalStore.getSignal(signal.signal_id), { matches }),
+    blocks: signalCardBlocks(signalStore.getSignal(signal.signal_id)),
   });
 
-  return signal;
+  return signalStore.getSignal(signal.signal_id);
 }
 
 /**
@@ -106,6 +217,8 @@ async function runScan({ client, channelId, hoursBack, actionToken, botUserId, p
       authorName: msg.author_name,
       permalink: msg.permalink,
       post,
+      client,
+      actionToken,
     });
     if (signal) found += 1;
   }
@@ -118,4 +231,13 @@ async function runScan({ client, channelId, hoursBack, actionToken, botUserId, p
   return found;
 }
 
-module.exports = { runScan, parseHoursBack, makeChannelPoster, processMessageForSignals, confidenceThreshold };
+module.exports = {
+  runScan,
+  parseHoursBack,
+  makeChannelPoster,
+  processMessageForSignals,
+  confidenceThreshold,
+  outreachChannel,
+  postOutreach,
+  _rateLimiter: rateLimiter, // exposed for tests only
+};

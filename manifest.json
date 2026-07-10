@@ -57,6 +57,7 @@
         "app_mentions:read",
         "assistant:write",
         "im:history",
+        "im:write",
         "users:read"
       ]
     }

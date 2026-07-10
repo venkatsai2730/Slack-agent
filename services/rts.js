@@ -8,6 +8,8 @@
 // live here) — see services/searchService.js for the Community Beacon search
 // queries built on top of searchMessages().
 
+const telemetry = require('./telemetry');
+
 const MAX_TOKEN_AGE_MS = 2 * 60 * 1000;
 let cached = { token: null, receivedAt: 0 };
 
@@ -72,23 +74,29 @@ function captureFromEvent(eventOrMessage, body) {
  * @returns {Promise<RtsMessage[]>}
  */
 async function searchMessages(client, { channelId, hoursBack, actionToken, query, limit = 20 }) {
-  const after = Math.floor(Date.now() / 1000) - hoursBack * 3600;
-  const res = await client.apiCall('assistant.search.context', {
-    query,
-    action_token: actionToken,
-    after,
-    sort: 'timestamp',
-    sort_dir: 'desc',
-    limit,
-    include_bots: false,
-    content_types: ['messages'],
-    channel_types: ['public_channel'],
-  });
-  // assistant.search.context's response shape isn't part of @slack/bolt's typed
-  // WebAPICallResult — this is an untyped Slack API method, hence the cast.
-  const data = /** @type {any} */ (res);
-  const messages = data.results?.messages || data.messages || [];
-  return messages.filter((m) => (!channelId || m.channel_id === channelId) && !m.is_author_bot);
+  return telemetry.time(
+    'rts_search',
+    async () => {
+      const after = Math.floor(Date.now() / 1000) - hoursBack * 3600;
+      const res = await client.apiCall('assistant.search.context', {
+        query,
+        action_token: actionToken,
+        after,
+        sort: 'timestamp',
+        sort_dir: 'desc',
+        limit,
+        include_bots: false,
+        content_types: ['messages'],
+        channel_types: ['public_channel'],
+      });
+      // assistant.search.context's response shape isn't part of @slack/bolt's typed
+      // WebAPICallResult — this is an untyped Slack API method, hence the cast.
+      const data = /** @type {any} */ (res);
+      const messages = data.results?.messages || data.messages || [];
+      return messages.filter((m) => (!channelId || m.channel_id === channelId) && !m.is_author_bot);
+    },
+    { channel_id: channelId, hours_back: hoursBack }
+  );
 }
 
 module.exports = {

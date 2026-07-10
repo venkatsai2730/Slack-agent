@@ -38,4 +38,17 @@ function extractJson(text, fallback) {
   }
 }
 
-module.exports = { complete, extractJson };
+// Every prompt in this codebase fences user-controlled text (Slack message
+// content) inside a `"""..."""` delimiter so the model can distinguish
+// instructions from data. A message that itself contains a literal `"""`
+// could otherwise prematurely close that fence and inject new "instructions"
+// after it. Splitting the delimiter with an explicit zero-width space
+// (U+200B, built via fromCharCode rather than pasting the invisible
+// character into source) neutralizes that without visibly altering the
+// text — Slack/log output renders identically since U+200B has no glyph.
+const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
+function sanitizeForPrompt(text) {
+  return String(text || '').split('"""').join(`"${ZERO_WIDTH_SPACE}""`);
+}
+
+module.exports = { complete, extractJson, sanitizeForPrompt };

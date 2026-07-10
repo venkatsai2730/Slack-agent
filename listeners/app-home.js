@@ -1,4 +1,5 @@
 const signalStore = require('../services/signalStore');
+const analyticsService = require('../services/analytics');
 const { dashboardBlocks } = require('../blocks/dashboard-blocks');
 
 // Renders the analytics dashboard into the App Home "Home" tab whenever a user
@@ -9,9 +10,10 @@ module.exports = (app) => {
     if (event.tab !== 'home') return;
     try {
       const stats = signalStore.statsSummary();
+      const analytics = analyticsService.buildAnalytics();
       await client.views.publish({
         user_id: event.user,
-        view: { type: 'home', blocks: dashboardBlocks(stats) },
+        view: { type: 'home', blocks: dashboardBlocks(stats, analytics) },
       });
     } catch (err) {
       logger.error('Failed to publish App Home dashboard:', err);

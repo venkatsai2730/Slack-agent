@@ -1,5 +1,64 @@
 # Changelog
 
+## [Unreleased] — Follow-up fixes for the three documented edge cases
+
+The prior verification pass found three edge cases and documented them as known limitations rather than fixing them. Revisited and fixed all three, which surfaced one more real defect along the way (`matchService.findMatches()` never excluded already-resolved signals). 94/94 tests passing (up from 87), `tsc --noEmit` clean.
+
+### Fixed
+
+- **Card buttons stayed clickable after a match was confirmed** (`blocks/signal-card.js`, `listeners/actions/signal-actions.js`) — `claim_help`/`not_a_request` now gate on `resolution.resolved`, not `signal.status`, so they disappear once a signal is resolved. Also guarded inside the action handlers themselves (defense in depth against a stale card render), with a clear ephemeral message if clicked anyway.
+- **A rejected match was never retried** (`listeners/actions/signal-actions.js`) — `reject_match` now records the rejected candidate (`signalStore.addRejectedCandidate`, new `rejected_candidates` field) and immediately re-runs `matchService.findMatches()` + `matchDecision.decide()` against the remaining candidates, excluding everything rejected so far. Lands on a new HIGH/MEDIUM/LOW branch just like a fresh signal would, including posting outreach if it lands on LOW.
+- **MCP's `log_case` never ran the match-decision engine** (`mcp/server.js`) — now runs `matchService.findMatches()` + `matchDecision.decide()` after persisting the signal, same as the Slack pipeline, and returns the decision in the tool's response.
+- **(Found while fixing the above) `matchService.findMatches()` didn't exclude already-resolved signals** — it filtered by `status === 'new'`, but `confirmMatch()` never changes `status`, only `resolution`. A volunteer already matched to one need could be recommended again for an unrelated one; confirming that second "match" would silently overwrite the first `confirmed_match` record on the same signal. Now also excludes any candidate with `resolution.resolved`.
+
+### Added
+
+- `services/matchDecision.js#toMatchRecommendation()` — extracted shared helper (previously inlined in `scan.js`) so `scan.js`, the `reject_match` re-decision, and MCP's `log_case` all build the identical persisted shape.
+- `services/signalStore.js#addRejectedCandidate()` + new `rejected_candidates` field (with load-time backfill for pre-existing data).
+- `scan.js#postOutreach` exported so the reject_match re-decision can trigger the same LOW-branch outreach post a fresh signal would get.
+- Tests: `test/signalCard.test.js` (button visibility), `test/signalActions.test.js` (resolved-state guards + reject/re-decide flow), a `handleLogCase` match-decision test in `test/mcpTools.test.js`.
+- `ARCHITECTURE.md` — Known Limitations and Security properties updated to reflect the fixes.
+
+## [Unreleased] — Production verification pass (4 defects found and fixed)
+
+A full end-to-end verification of the agentic reasoning loop below, covering Socket Mode, event subscriptions, the detect→search→enrich→summarize→match→escalate pipeline, all 9 new MCP tools, CRM/telemetry/rate-limiting/prompt-injection handling, Block Kit rendering, and every interactive button. Four real defects were found and fixed; everything else verified clean (87/87 tests, `tsc --noEmit` clean).
+
+### Fixed
+
+- **Rate limiter gated every message, not just LLM-triggering ones** (`services/scan.js`) — `RATE_LIMIT_LLM_PER_CHANNEL_PER_MIN` was consumed by every message reaching `processMessageForSignals()`, so ordinary channel chatter could exhaust the budget and silently drop genuine signals arriving later in the same minute. Now only gates messages that pass `intentEngine.hasKeywordHint()`.
+- **Escalation sweep could mark signals "escalated" with zero notifications sent** (`services/escalation.js`) — if no `COORDINATOR_USER_IDS`/`COMMUNITY_ALERTS_CHANNEL` were configured (or no Slack client was available), `runEscalationSweep()` still called `markEscalated()` for every candidate, silently burning through `ESCALATION_MAX_REMINDERS` without a human ever being notified. Now skips the sweep entirely (`skipped_no_destination`) when there's no viable destination, and only counts a signal as escalated if a DM or channel post actually succeeded.
+- **Prompt-fence escape vector** (`services/llm.js`) — user message text was fenced in prompts with `"""..."""` but a message containing a literal `"""` could prematurely close the fence and inject new instructions. Added `sanitizeForPrompt()` (breaks the delimiter with a zero-width space) and applied it in `intentEngine.js`/`summaryService.js`.
+- **MCP `log_case` never benefited from live-search enrichment** (`mcp/server.js`) — `workspaceContext.buildContext()` was called without a Slack client even though one was obtainable via `getSlackClient()`, so Feature 1 enrichment silently degraded to structured-history-only for signals logged through MCP. Now passes a client when a real channel is given.
+
+### Added
+
+- Tests: `processMessageForSignals rate-limits keyword-hinted messages, not every message` + a companion non-keyword test (`test/scan.test.js`); two `runEscalationSweep` no-destination regression tests (`test/escalation.test.js`); three `sanitizeForPrompt` tests (`test/llm.test.js`). 87 tests passing (up from 80).
+- `ARCHITECTURE.md` — new "Security properties" section; Known Limitations expanded with the button-visibility-after-match, rejected-match-not-retried, and MCP-log_case-no-match-decision edge cases found during this pass.
+
+## [Unreleased] — Agentic RTS+MCP reasoning loop (10-feature hackathon build)
+
+Extends Community Beacon from a linear detect → summarize → match pipeline into an agentic system that reasons over live workspace history, matches with explainable confidence branching, escalates proactively, and tracks real impact metrics. All ten features below are implemented for real (no stubs/TODOs); existing functionality and architecture (Bolt + MCP two-process design, mock-first CRM, App Home dashboard, deterministic scoring) are preserved and extended, not replaced. See `ARCHITECTURE.md` for the full reasoning-loop diagram and sequencing.
+
+### Added
+
+- **`services/workspaceContext.js`** (Feature 1/7) — combines a live RTS/history search (reusing `searchService.js`/`rts.js`) with structured aggregation over `signalStore.js` (requester history, channel/type recurrence, unresolved similar signals, repeat volunteers/requesters, confirmed-match outcomes), cached with a 60s TTL (`withCache`). Wired into `scan.js#processMessageForSignals()` before summarization.
+- **AI Coordinator Reasoning** (Feature 7) — `summaryService.js`'s prompt and output schema extended (additively) with `recurrence_summary`, `risk_assessment`, `volunteer_recommendation`, `confidence_score`, `reasoning`, `alternative_options`, `escalation_recommendation`, `expected_impact`; rendered in a new section of `signal-card.js`.
+- **`services/matchDecision.js`** (Feature 3) — confidence-based HIGH/MEDIUM/LOW branching on top of `matchService.js`'s candidate generation (text similarity, volunteer history, channel proximity, priority, historical success). New `confirm_match`/`approve_match`/`reject_match` actions in `signal-actions.js`; LOW branch auto-posts outreach to `VOLUNTEERS_NEEDED_CHANNEL`.
+- **`services/escalation.js`** (Feature 2) — proactive hourly sweep (`ESCALATION_CHECK_MINUTES`) for unresolved signals past a per-tier age threshold, respecting quiet hours and a max-reminders cap; DMs `COORDINATOR_USER_IDS` and posts to `COMMUNITY_ALERTS_CHANNEL` with an AI-written explanation. Scheduled from `app.js` via `setInterval`. New `im:write` manifest scope for DMs.
+- **Reasoning timeline** (Feature 5) — every signal now carries a `timeline` of `{ at, stage, detail }` events (`signalStore.recordTimelineEvent`), viewable via a new **View Timeline** card button, and summarized in the dashboard/report.
+- **`services/analytics.js`** (Feature 4) — time-to-match, response times by tier, auto-triage count, confidence-branch distribution, successful matches, escalation counts, coordinator interventions, volunteer utilization, repeat requesters/volunteers, per-channel demand heatmap, daily/weekly/monthly trends, and a documented estimated-hours-saved heuristic. Folded into `dashboard-blocks.js` and `report-blocks.js`/`report.js`.
+- **9 new MCP tools** (Feature 6, `mcp/server.js`) — `search_workspace_history`, `get_location_patterns`, `get_repeat_requesters`, `get_repeat_volunteers`, `get_unresolved_similar`, `get_recent_matches`, `get_successful_outcomes`, `get_priority_statistics`, `summarize_workspace_context`; `get_constituent_context` extended to merge CRM context with workspace signal history. Every tool handler refactored into a standalone exported `handle*` function (registered with the SDK and unit-tested directly).
+- **`services/telemetry.js`** (Feature 9) — structured JSON logging + timing wrapper, instrumenting RTS search, workspace-context builds, MCP tool calls, match decisions, and escalation sweeps. No new dependency.
+- **Rate limiting** — a per-channel token bucket (`RATE_LIMIT_LLM_PER_CHANNEL_PER_MIN`) in `scan.js` capping LLM-triggering detections.
+- **Signal schema extensions** (`signalStore.js`) — `timeline`, `escalation`, `resolution`, `confirmed_match`, `decision_branch`, `match_recommendation`, plus a load-time backfill for signals persisted before this pass.
+- **Tests**: `test/workspaceContext.test.js`, `test/matchDecision.test.js`, `test/escalation.test.js`, `test/analytics.test.js`, `test/mcpTools.test.js` added; 80 tests passing (up from 41), `tsc --noEmit` clean.
+
+### Changed
+
+- `services/scan.js#processMessageForSignals()` — now runs the full detect → search history → enrich → summarize → persist → case-log → match-decide → post pipeline (previously detect → summarize → persist → case-log → match → post).
+- `blocks/signal-card.js` — `signalCardBlocks(signal)` no longer takes a `{ matches }` option; the branch-labeled match recommendation and AI reasoning are read directly off the persisted signal.
+- `.env.sample`, `manifest.json` (`im:write` scope), `README.md`, `ARCHITECTURE.md` — updated for the new environment variables, MCP tools, sequence diagram, and demo script.
+
 ## [Unreleased] — Community Beacon pivot (Slack Agent for Good)
 
 Full domain pivot from **Growth Beacon** (B2B SaaS growth intelligence) to **Community Beacon** (community-impact agent for mutual-aid groups and nonprofits), built for the Slack Agent Builder Challenge's Slack Agent for Good track. This is, in a sense, a return to the project's original domain — see `PROJECT_ANALYSIS.md` for the pre-Growth-Beacon "Community Impact Agent" — but rebuilt on top of the Growth Beacon era's stronger architecture (MCP server, RTS + fallback search, typed JS, unit tests, provider abstraction).

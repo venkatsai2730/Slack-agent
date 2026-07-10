@@ -7,7 +7,7 @@ const { processMessageForSignals } = require('../../services/scan');
 // LLM calls that do run don't result in a posted alert).
 module.exports = (app) => {
   app.event('message', async ({ event, body, client, context, logger }) => {
-    rts.captureFromEvent(event, body);
+    const actionToken = rts.captureFromEvent(event, body);
 
     // Skip edits, deletions, joins/leaves, bot messages, and the bot's own posts.
     if (event.subtype || event.bot_id || !event.text || event.user === context.botUserId) return;
@@ -33,6 +33,8 @@ module.exports = (app) => {
         authorId: event.user,
         permalink,
         post,
+        client,
+        actionToken,
       });
     } catch (err) {
       logger.error('Real-time signal detection failed:', err);

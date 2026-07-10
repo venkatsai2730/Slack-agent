@@ -29,9 +29,16 @@ for (const [offer, needs] of Object.entries(OFFER_TO_NEEDS)) {
 const OFFER_TYPES = new Set(Object.keys(OFFER_TO_NEEDS));
 
 /**
- * Finds open (status "new") signals that complement the given one: open needs
- * for an offer, recent offers for a need. Returns [] for signal types with no
- * matching affinity (e.g. gratitude_report).
+ * Finds open (status "new", not already resolved) signals that complement
+ * the given one: open needs for an offer, recent offers for a need. Returns
+ * [] for signal types with no matching affinity (e.g. gratitude_report).
+ *
+ * Excludes already-`resolution.resolved` signals in addition to filtering by
+ * status — `confirmMatch()` never changes a signal's `status` (only
+ * `resolution`/`confirmed_match`), so without this a volunteer already
+ * matched to one need could be recommended again for an unrelated one;
+ * confirming that second "match" would silently overwrite the first
+ * `confirmed_match` record on the same offer signal.
  * @param {import('./signalStore').Signal} signal
  * @param {{ limit?: number }} [opts]
  * @returns {import('./signalStore').Signal[]}
@@ -45,7 +52,7 @@ function findMatches(signal, { limit = 3 } = {}) {
   const targets = new Set(targetTypes);
   return signalStore
     .listByStatus('new')
-    .filter((s) => s.signal_id !== signal.signal_id && targets.has(s.primary_type))
+    .filter((s) => s.signal_id !== signal.signal_id && targets.has(s.primary_type) && !s.resolution?.resolved)
     .sort((a, b) => {
       const byPriority = scorePriority(b.types).score - scorePriority(a.types).score;
       return byPriority !== 0 ? byPriority : b.created_at.localeCompare(a.created_at);

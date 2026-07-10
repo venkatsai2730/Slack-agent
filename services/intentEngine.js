@@ -3,7 +3,7 @@
 // of help, and coordination moments — each with a confidence score, supporting
 // evidence, AI reasoning, and a recommended next action.
 
-const { complete, extractJson } = require('./llm');
+const { complete, extractJson, sanitizeForPrompt } = require('./llm');
 
 /** Fixed vocabulary of signal types the engine is allowed to emit. */
 const SIGNAL_TYPES = [
@@ -77,8 +77,8 @@ async function detectSignals(text, { threadContext = '' } = {}) {
   if (!hasKeywordHint(text) && !hasKeywordHint(threadContext)) return [];
 
   const userPrompt = threadContext
-    ? `Message:\n"""${text}"""\n\nThread context (earlier messages, oldest first):\n"""${threadContext}"""`
-    : `Message:\n"""${text}"""`;
+    ? `Message:\n"""${sanitizeForPrompt(text)}"""\n\nThread context (earlier messages, oldest first):\n"""${sanitizeForPrompt(threadContext)}"""`
+    : `Message:\n"""${sanitizeForPrompt(text)}"""`;
 
   let parsed = { signals: [] };
   try {
