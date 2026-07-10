@@ -5,9 +5,13 @@
 
 /** @type {Record<string, number>} */
 const SIGNAL_WEIGHTS = {
-  // Needs (drive urgency)
-  medical_need: 30,
-  urgent_need: 30,
+  // Needs (drive urgency). medical_need/urgent_need are weighted so a single
+  // high-confidence signal of either type reaches 'critical' on its own
+  // (score >= 55) — a lone "someone collapsed, needs help now" message must
+  // not depend on the LLM also co-tagging a second signal type to get the
+  // fastest (1h) escalation SLA instead of the 4h one.
+  medical_need: 60,
+  urgent_need: 60,
   housing_need: 25,
   food_insecurity: 25,
   emotional_support_need: 20,

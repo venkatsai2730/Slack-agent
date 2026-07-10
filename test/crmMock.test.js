@@ -2,11 +2,12 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'crm-mock.json');
-
-// mockProvider persists to a fixed file (data/crm-mock.json) and loads it at
-// require() time — clean the slate synchronously before requiring the module.
+// Isolated per-test temp path (never the real data/crm-mock.json) so running
+// the suite can never wipe production/demo data.
+const DATA_FILE = path.join(os.tmpdir(), `crmMock-test-${process.pid}.json`);
+process.env.CRM_MOCK_DATA_FILE = DATA_FILE;
 fs.rmSync(DATA_FILE, { force: true });
 after(() => {
   fs.rmSync(DATA_FILE, { force: true });

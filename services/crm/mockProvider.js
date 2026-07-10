@@ -5,8 +5,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const DATA_FILE = path.join(DATA_DIR, 'crm-mock.json');
+// Overridable so tests never touch the real production file (see
+// test/crmMock.test.js and test/mcpTools.test.js, which point this at an
+// isolated temp path instead of deleting the live data/crm-mock.json).
+const DATA_FILE = process.env.CRM_MOCK_DATA_FILE
+  ? path.resolve(process.env.CRM_MOCK_DATA_FILE)
+  : path.join(__dirname, '..', '..', 'data', 'crm-mock.json');
+const DATA_DIR = path.dirname(DATA_FILE);
 
 let store = { activities: [], followups: [] };
 let counter = 0;

@@ -6,9 +6,14 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
-const SIGNALS_FILE = path.join(__dirname, '..', 'data', 'signals.json');
-const CRM_FILE = path.join(__dirname, '..', 'data', 'crm-mock.json');
+// Isolated per-test temp paths (never the real data/*.json) so running the
+// suite can never wipe production/demo data.
+const SIGNALS_FILE = path.join(os.tmpdir(), `mcpTools-signals-test-${process.pid}.json`);
+const CRM_FILE = path.join(os.tmpdir(), `mcpTools-crm-test-${process.pid}.json`);
+process.env.SIGNALS_DATA_FILE = SIGNALS_FILE;
+process.env.CRM_MOCK_DATA_FILE = CRM_FILE;
 fs.rmSync(SIGNALS_FILE, { force: true });
 fs.rmSync(CRM_FILE, { force: true });
 after(() => {
@@ -38,7 +43,7 @@ function payload(result) {
 test('handleScorePriority scores an explicitly-provided signals array without calling the LLM', async () => {
   const result = await mcp.handleScorePriority({ signals: [{ type: 'medical_need', confidence: 1 }] });
   const body = payload(result);
-  assert.equal(body.tier, 'high');
+  assert.equal(body.tier, 'critical');
   assert.ok(body.score > 0);
 });
 

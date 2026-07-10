@@ -2,8 +2,12 @@ const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'signals.json');
+// Isolated per-test temp path (never the real data/signals.json) so running
+// the suite can never wipe production/demo data.
+const DATA_FILE = path.join(os.tmpdir(), `signalActions-test-${process.pid}.json`);
+process.env.SIGNALS_DATA_FILE = DATA_FILE;
 fs.rmSync(DATA_FILE, { force: true });
 after(() => {
   fs.rmSync(DATA_FILE, { force: true });

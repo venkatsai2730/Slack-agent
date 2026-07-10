@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — Live Slack workspace verification (3 defects found and fixed)
+
+End-to-end verification against a real Slack workspace (transportation/food/volunteer-offer signals, dashboard, timeline, escalation DMs, all 17 MCP tools) surfaced three real defects. 96/96 tests passing (up from 94).
+
+### Fixed
+
+- **Concurrent processes silently dropped signals** (`services/signalStore.js`) — `app.js` and `mcp/server.js` are designed to run as two separate processes against the same `data/signals.json`, but each held its own in-memory copy and `save()` blindly overwrote the file, so whichever process saved last discarded any signals the other had persisted since its last load. Reproduced live (a food-insecurity signal detected mid-test vanished from the store) and with a standalone race simulation. `save()` now re-reads the on-disk state and merges by `signal_id` (newest `updated_at` wins per signal) before writing.
+- **A lone medical/urgent emergency could never reach "critical" priority** (`services/priorityScore.js`) — `medical_need`/`urgent_need` were weighted at 30, but `critical` requires a score ≥ 55, so a single high-confidence signal of either type capped at `high` — the design (see prior test suite) required a *second* corroborating signal type to reach `critical`. A real test message ("someone collapsed and needs medical help now") was tagged with only `medical_need` and scored `high`, which would have used the 4-hour escalation SLA instead of the 1-hour one. Both weights raised to 60 so a single high-confidence signal alone crosses the critical threshold.
+- **`npm test` silently destroyed production/demo data** (`services/signalStore.js`, `services/crm/mockProvider.js`, 9 test files) — 8 test files did `fs.rmSync()` directly on the real `data/signals.json` (one also on `data/crm-mock.json`) to reset state before requiring the module, with no isolation from a live deployment. Running the suite against a workspace with real accumulated signals (as this verification pass was doing) wiped it out — reproduced twice in this session. Both store modules' data file paths are now overridable via `SIGNALS_DATA_FILE`/`CRM_MOCK_DATA_FILE` env vars; every affected test now points at an isolated per-process temp file instead of the production path. Verified with a canary file that survives a full test run untouched.
+
 ## [Unreleased] — Follow-up fixes for the three documented edge cases
 
 The prior verification pass found three edge cases and documented them as known limitations rather than fixing them. Revisited and fixed all three, which surfaced one more real defect along the way (`matchService.findMatches()` never excluded already-resolved signals). 94/94 tests passing (up from 87), `tsc --noEmit` clean.

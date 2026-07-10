@@ -5,8 +5,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DATA_FILE = path.join(DATA_DIR, 'signals.json');
+// Overridable so tests never touch the real production file (see
+// test/signalStore.test.js and friends, which point this at an isolated
+// temp path instead of deleting the live data/signals.json).
+const DATA_FILE = process.env.SIGNALS_DATA_FILE
+  ? path.resolve(process.env.SIGNALS_DATA_FILE)
+  : path.join(__dirname, '..', 'data', 'signals.json');
+const DATA_DIR = path.dirname(DATA_FILE);
 
 /**
  * @typedef {Object} Signal
@@ -63,9 +68,50 @@ function load() {
 }
 load();
 
+/**
+ * app.js and mcp/server.js run as two separate Node processes that both hold
+ * their own in-memory copy of this store, so a naive overwrite-on-save would
+ * let whichever process saves last silently discard signals the other
+ * process persisted in the meantime. Re-reading the on-disk state right
+ * before writing and merging by signal_id (newest `updated_at` wins per
+ * signal) closes that window instead of blindly clobbering it.
+ * @param {{ signals: Signal[], scans: {at: string, signals_found: number}[] }} current
+ */
+function mergeWithDisk(current) {
+  let onDisk;
+  try {
+    onDisk = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (err) {
+    return current; // nothing persisted yet (or unreadable) — nothing to merge against
+  }
+  if (!Array.isArray(onDisk.signals)) onDisk.signals = [];
+  if (!Array.isArray(onDisk.scans)) onDisk.scans = [];
+
+  const byId = new Map(onDisk.signals.map((s) => [s.signal_id, s]));
+  for (const signal of current.signals) {
+    const existing = byId.get(signal.signal_id);
+    if (!existing || new Date(signal.updated_at) >= new Date(existing.updated_at)) {
+      byId.set(signal.signal_id, signal);
+    }
+  }
+  const mergedSignals = Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+  const seen = new Set();
+  const mergedScans = [];
+  for (const scan of [...onDisk.scans, ...current.scans]) {
+    if (seen.has(scan.at)) continue;
+    seen.add(scan.at);
+    mergedScans.push(scan);
+  }
+
+  return { signals: mergedSignals, scans: mergedScans };
+}
+
 function save() {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    store = mergeWithDisk(store);
+    counter = Math.max(counter, store.signals.length);
     const tmpFile = `${DATA_FILE}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(store, null, 2));
     fs.renameSync(tmpFile, DATA_FILE);

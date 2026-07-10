@@ -14,6 +14,18 @@ test('scorePriority marks combined medical + urgent need as critical', () => {
     { type: 'medical_need', confidence: 1 },
     { type: 'urgent_need', confidence: 1 },
   ]);
+  assert.equal(result.score, 100); // clamped
+  assert.equal(result.tier, 'critical');
+});
+
+test('scorePriority marks a lone high-confidence medical_need as critical (no second signal needed)', () => {
+  const result = scorePriority([{ type: 'medical_need', confidence: 1 }]);
+  assert.equal(result.score, 60);
+  assert.equal(result.tier, 'critical');
+});
+
+test('scorePriority marks a lone high-confidence urgent_need as critical (no second signal needed)', () => {
+  const result = scorePriority([{ type: 'urgent_need', confidence: 1 }]);
   assert.equal(result.score, 60);
   assert.equal(result.tier, 'critical');
 });
