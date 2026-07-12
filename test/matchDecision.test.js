@@ -73,3 +73,54 @@ test('decide() falls back to MEDIUM or LOW for a first-time candidate with no sh
   assert.notEqual(decision.branch, 'high');
   assert.ok(decision.confidence < matchDecision.HIGH_THRESHOLD);
 });
+
+test('computeMatchConfidence\'s priority factor reflects the need side regardless of which side triggered the match', () => {
+  // Before the fix, `priority` always read scorePriority(signal.types) — so an
+  // offer arriving to match an already-open urgent need scored near-zero
+  // priority (offers carry weight ~3), instead of reflecting the need's real
+  // urgency (medical_need carries weight 60). Assert both directions agree.
+  const need = makeSignal('medical_need', { message: { channel_id: 'C11', ts: '1', permalink: '', author_user_id: 'U_NEED', author_name: 'Needer', text: 't' } });
+  const offer = makeSignal('volunteer_offer', { message: { channel_id: 'C11', ts: '2', permalink: '', author_user_id: 'U_OFFER', author_name: 'Offerer', text: 't' } });
+
+  const needTriggers = matchDecision.computeMatchConfidence(need, offer);
+  const offerTriggers = matchDecision.computeMatchConfidence(offer, need);
+
+  assert.equal(needTriggers.factors.priority, offerTriggers.factors.priority);
+  assert.ok(needTriggers.factors.priority > 0.4, 'a medical_need in the pair should dominate the priority factor regardless of trigger direction');
+});
+
+test('computeMatchConfidence\'s volunteerHistory factor credits the true offer author regardless of trigger direction', () => {
+  // Before the fix, volunteerHistory always scored `candidate` — so when a
+  // proven volunteer's own offer triggered detection (signal = offer,
+  // candidate = need), their track record was silently dropped from the score.
+  for (let i = 0; i < 5; i += 1) {
+    const n = makeSignal('housing_need', { message: { channel_id: 'C12', ts: `n${i}`, permalink: '', author_user_id: `UNEED${i}`, author_name: 'Needer', text: 't' } });
+    const o = makeSignal('donation_offer', { message: { channel_id: 'C12', ts: `o${i}`, permalink: '', author_user_id: 'U_PROVEN', author_name: 'Proven', text: 't' } });
+    signalStore.confirmMatch(n.signal_id, o.signal_id, 0.9, 'U999');
+  }
+  const newNeed = makeSignal('housing_need', { message: { channel_id: 'C12', ts: 'new1', permalink: '', author_user_id: 'U_NEW', author_name: 'New Needer', text: 't' } });
+  const newOffer = makeSignal('donation_offer', { message: { channel_id: 'C12', ts: 'new2', permalink: '', author_user_id: 'U_PROVEN', author_name: 'Proven', text: 't' } });
+
+  const needTriggers = matchDecision.computeMatchConfidence(newNeed, newOffer);
+  const offerTriggers = matchDecision.computeMatchConfidence(newOffer, newNeed);
+
+  assert.equal(needTriggers.factors.volunteerHistory, offerTriggers.factors.volunteerHistory);
+  assert.ok(needTriggers.factors.volunteerHistory > 0, 'the proven volunteer\'s track record should count regardless of who triggered the match');
+});
+
+test('decide()\'s explanation never credits a need-requester with the offer author\'s match history', () => {
+  // Build up a proven-volunteer offer, then let the OFFER trigger detection
+  // (signal = offer, candidate = need) — the explanation names `candidate`
+  // (the need's requester), so it must never claim they've "completed N
+  // matches" using the volunteer's history that scored the match.
+  for (let i = 0; i < 5; i += 1) {
+    const n = makeSignal('food_insecurity', { message: { channel_id: 'C13', ts: `n${i}`, permalink: '', author_user_id: `UNEED${i}`, author_name: 'Needer', text: 't' } });
+    const o = makeSignal('donation_offer', { message: { channel_id: 'C13', ts: `o${i}`, permalink: '', author_user_id: 'U_PROVEN2', author_name: 'Proven Two', text: 't' } });
+    signalStore.confirmMatch(n.signal_id, o.signal_id, 0.9, 'U999');
+  }
+  const offerTrigger = makeSignal('donation_offer', { message: { channel_id: 'C13', ts: 'trig', permalink: '', author_user_id: 'U_PROVEN2', author_name: 'Proven Two', text: 't' } });
+  const needCandidate = makeSignal('food_insecurity', { message: { channel_id: 'C13', ts: 'cand', permalink: '', author_user_id: 'U_NEEDER_NEW', author_name: 'Needer New', text: 't' } });
+
+  const decision = matchDecision.decide(offerTrigger, [needCandidate]);
+  assert.doesNotMatch(decision.explanation, /Needer New.*completed/, 'must not attribute volunteer match history to the need-requester being named');
+});

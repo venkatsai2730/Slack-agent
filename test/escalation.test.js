@@ -114,8 +114,14 @@ test('selectEscalationCandidates respects the max-reminders cap', () => {
 });
 
 test('runEscalationSweep is a no-op during quiet hours', async () => {
-  process.env.ESCALATION_QUIET_HOURS_START = '0';
-  process.env.ESCALATION_QUIET_HOURS_END = '23'; // quiet nearly all day, guaranteed to hit "now"
+  // A fixed '0'-'23' window looked like it covered "any time," but isQuietHours'
+  // same-day check (hour >= start && hour < end) actually excludes hour 23 itself
+  // — so this test failed for real whenever it ran during the 11pm hour. Compute
+  // a one-hour window around the actual current hour instead, so it always covers
+  // "now" regardless of wall-clock time (including the wrap at 23 -> 0).
+  const currentHour = new Date().getHours();
+  process.env.ESCALATION_QUIET_HOURS_START = String(currentHour);
+  process.env.ESCALATION_QUIET_HOURS_END = String((currentHour + 1) % 24);
   const result = await escalation.runEscalationSweep({ client: null });
   assert.equal(result.skipped_quiet_hours, true);
   assert.equal(result.escalated, 0);

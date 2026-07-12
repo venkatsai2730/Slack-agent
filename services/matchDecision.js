@@ -7,6 +7,7 @@
 // itself, only the confidence_score from summaryService's LLM output factors in.
 
 const { scorePriority } = require('./priorityScore');
+const { OFFER_TYPES } = require('./matchService');
 const workspaceContext = require('./workspaceContext');
 const telemetry = require('./telemetry');
 
@@ -64,17 +65,36 @@ function historicalSuccessScore(signal, candidate) {
 }
 
 /**
+ * findMatches() only ever pairs an offer-type signal with a need/coordination-type
+ * one (see matchService's OFFER_TO_NEEDS/NEED_TO_OFFERS), so exactly one of
+ * signal/candidate is always the offer side — but decide() is called with
+ * whichever of the two was just detected as `signal`, so that side isn't
+ * consistently the offer. Two of the confidence factors are direction-
+ * sensitive (they mean "the need's urgency" and "the offer author's track
+ * record", not "signal's" or "candidate's") and must be evaluated on the
+ * correct side regardless of which one triggered this decision.
+ * @param {import('./signalStore').Signal} signal
+ * @param {import('./signalStore').Signal} candidate
+ * @returns {{ offerSide: import('./signalStore').Signal, needSide: import('./signalStore').Signal }}
+ */
+function resolveSides(signal, candidate) {
+  const signalIsOffer = OFFER_TYPES.has(signal.primary_type);
+  return { offerSide: signalIsOffer ? signal : candidate, needSide: signalIsOffer ? candidate : signal };
+}
+
+/**
  * @param {import('./signalStore').Signal} signal
  * @param {import('./signalStore').Signal} candidate
  * @returns {{ confidence: number, factors: Record<string, number> }}
  */
 function computeMatchConfidence(signal, candidate) {
+  const { offerSide, needSide } = resolveSides(signal, candidate);
   const factors = {
     typeAffinity: 1,
     textSimilarity: textSimilarity(signal.summary?.what_happened, candidate.summary?.what_happened),
-    volunteerHistory: volunteerHistoryScore(candidate),
+    volunteerHistory: volunteerHistoryScore(offerSide),
     locationProximity: signal.message?.channel_id === candidate.message?.channel_id ? 1 : 0.4,
-    priority: scorePriority(signal.types).score / 100,
+    priority: scorePriority(needSide.types).score / 100,
     historicalSuccess: historicalSuccessScore(signal, candidate),
   };
   const confidence = Object.entries(WEIGHTS).reduce((sum, [key, weight]) => sum + weight * factors[key], 0);
@@ -84,13 +104,24 @@ function computeMatchConfidence(signal, candidate) {
 /**
  * Explains, in one sentence, why a candidate was recommended — surfaced in
  * the coordinator-review (MEDIUM) card and the HIGH auto-recommend card.
+ *
+ * `factors.volunteerHistory` is scored against whichever of signal/candidate
+ * is the true offer side (see resolveSides()), which is not always
+ * `candidate` — e.g. when a volunteer's own offer just triggered detection,
+ * `candidate` is the need it's being matched against, and *that person* has
+ * no volunteer track record to credit. Only surface the "has completed N
+ * matches" reason when `candidate` (the one this sentence names) is actually
+ * the offer side that earned it, so the explanation never credits a
+ * requester with a volunteer's history.
+ * @param {import('./signalStore').Signal} signal
  * @param {import('./signalStore').Signal} candidate
  * @param {Record<string, number>} factors
  */
-function explain(candidate, factors) {
+function explain(signal, candidate, factors) {
+  const { offerSide } = resolveSides(signal, candidate);
   const authorName = candidate.message?.author_name || candidate.message?.author_user_id || 'This volunteer';
   const reasons = [];
-  if (factors.volunteerHistory > 0) {
+  if (factors.volunteerHistory > 0 && offerSide === candidate) {
     const count = Math.round(factors.volunteerHistory * 5);
     reasons.push(`has completed ${count} similar match${count === 1 ? '' : 'es'}`);
   }
@@ -125,9 +156,9 @@ function decide(signal, candidates) {
   } else {
     const top = scored[0];
     if (top.confidence >= HIGH_THRESHOLD) {
-      result = { branch: 'high', recommended: top.signal, confidence: top.confidence, explanation: explain(top.signal, top.factors), scored };
+      result = { branch: 'high', recommended: top.signal, confidence: top.confidence, explanation: explain(signal, top.signal, top.factors), scored };
     } else if (top.confidence >= MEDIUM_THRESHOLD) {
-      result = { branch: 'medium', recommended: top.signal, confidence: top.confidence, explanation: explain(top.signal, top.factors), scored };
+      result = { branch: 'medium', recommended: top.signal, confidence: top.confidence, explanation: explain(signal, top.signal, top.factors), scored };
     } else {
       result = { branch: 'low', recommended: null, confidence: top.confidence, explanation: 'Best candidate confidence too low to recommend automatically — routing to outreach.', scored };
     }
