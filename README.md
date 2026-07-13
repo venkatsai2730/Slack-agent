@@ -1,4 +1,4 @@
-# Community Beacon 🤝
+# Community Beacon 
 
 **Slack Agent Builder Challenge — Slack Agent for Good**
 
