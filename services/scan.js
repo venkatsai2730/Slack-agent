@@ -118,6 +118,12 @@ function makeChannelPoster(client, channelId) {
  * @returns {Promise<import('./signalStore').Signal | null>}
  */
 async function processMessageForSignals({ channelId, ts, text, authorId, authorName, permalink, threadContext, post, client, actionToken }) {
+  // A message already signaled once (by real-time monitoring or a prior scan)
+  // must never be re-detected — real-time monitoring and /cb-scan's lookback
+  // window both cover the same messages, and without this guard every rescan
+  // would create a fresh duplicate signal for everything already on record.
+  if (signalStore.findByChannelAndTs(channelId, ts)) return null;
+
   // Rate-limit only messages that would actually reach the LLM (i.e. pass the
   // keyword pre-filter) — gating on every message here would let ordinary
   // channel chatter exhaust the budget and silently drop genuine signals

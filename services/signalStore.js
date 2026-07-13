@@ -294,6 +294,17 @@ function getSignalsByChannel(channelId) {
 }
 
 /**
+ * Finds an existing signal already created from this exact source message, so
+ * callers (real-time monitoring, retroactive /cb-scan) can avoid re-detecting
+ * and re-persisting a duplicate signal for the same Slack message.
+ * @param {string} channelId
+ * @param {string} ts
+ */
+function findByChannelAndTs(channelId, ts) {
+  return store.signals.find((s) => s.message?.channel_id === channelId && s.message?.ts === ts);
+}
+
+/**
  * Unresolved signals older than an hours threshold — the core query for the
  * proactive escalation sweep (Feature 2).
  * @param {number} hours
@@ -436,6 +447,7 @@ module.exports = {
   markEscalated,
   getSignalsByAuthor,
   getSignalsByChannel,
+  findByChannelAndTs,
   listUnresolvedOlderThan,
   pickPrimaryType,
   listRecent,
